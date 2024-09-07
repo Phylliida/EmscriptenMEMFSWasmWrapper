@@ -12,7 +12,6 @@ OUT = memfs.wasm
 # Emscripten flags
 EMFLAGS = -s WASM=1 \
           -s WASMFS=1 \
-          -s SIDE_MODULE=0 \
           -s EXPORTED_FUNCTIONS='["_bees"]' \
           -s FILESYSTEM=1 \
           -s NO_EXIT_RUNTIME=1 \
@@ -20,7 +19,6 @@ EMFLAGS = -s WASM=1 \
           -s EXPORTED_RUNTIME_METHODS='["FS"]' \
           -s STANDALONE_WASM \
           -s ALLOW_MEMORY_GROWTH=1 \
-          -v \
           -O3 \
           --no-entry
 
