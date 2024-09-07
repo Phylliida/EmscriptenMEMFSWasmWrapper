@@ -1,6 +1,4 @@
-
-
-# Makefile for MEMFS WASM compilation
+# Makefile for MEMFS WASM compilation with filesystem operations
 
 # Compiler
 EMCC = emcc
@@ -13,13 +11,18 @@ OUT = memfs.wasm
 
 # Emscripten flags
 EMFLAGS = -s WASM=1 \
-          -s SIDE_MODULE=2 \
-          -s EXPORTED_RUNTIME_METHODS='["FS"]' \
+          -s WASMFS=1 \
+          -s SIDE_MODULE=0 \
+          -s EXPORTED_FUNCTIONS='["_bees"]' \
+          -s FILESYSTEM=1 \
+          -s NO_EXIT_RUNTIME=1 \
           -s FORCE_FILESYSTEM=1 \
-          -s EXPORTED_FUNCTIONS='["_init_memfs"]' \
-          -s ENVIRONMENT='web,worker' \
+          -s EXPORTED_RUNTIME_METHODS='["FS"]' \
           -s STANDALONE_WASM \
-          -s ERROR_ON_UNDEFINED_SYMBOLS=0
+          -s ALLOW_MEMORY_GROWTH=1 \
+          -v \
+          -O3 \
+          --no-entry
 
 # Default target
 all: $(OUT)
