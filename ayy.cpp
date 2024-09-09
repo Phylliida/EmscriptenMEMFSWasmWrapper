@@ -21,6 +21,7 @@
 #include <map>
 #include <sys/stat.h>
 
+#include <boost/unordered_map.hpp>
 
 #include <boost/smart_ptr/weak_ptr.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
@@ -28,6 +29,9 @@
 #include <boost/assert.hpp>
 #include <boost/config.hpp>
 
+// stuff done:
+// use this custom enable_shared_from_this_no_throw to prevent exception when shared_ptr created
+// -fno-exceptions prevents std::map insert from throwing exceptions
 
 
 namespace boost
@@ -763,6 +767,7 @@ protected:
 
   boost::shared_ptr<Directory> insertDirectory(const std::string& name,
                                              mode_t mode) override {
+    return nullptr;
     auto child = getBackend()->createDirectory(mode);
     insertChild(name, child);
     return child;
@@ -2922,13 +2927,13 @@ __attribute__((weak)) extern "C" void wasmfs_before_preload(void) {}
 
 // Set up global data structures and preload files.
 WasmFS::WasmFS()  {
-  /*
+  
   rootDirectory = initRootDirectory();
-  cwd = rootDirectory;
-  auto rootBackend = wasmfs_create_root_dir();
-  wasmfs_before_preload();
-  preloadFiles();
-  */
+  //cwd = rootDirectory;
+  //auto rootBackend = wasmfs_create_root_dir();
+  //wasmfs_before_preload();
+  //preloadFiles();
+  
 }
 
 
@@ -2948,14 +2953,14 @@ WasmFS::WasmFS()  {
 __attribute__((weak)) extern "C" void __lsan_do_leak_check(void) {}
 
 extern "C" void wasmfs_flush(void) {
-  /*
+
   // Flush musl libc streams.
   fflush(0);
 
   // Flush our own streams. TODO: flush all backends.
   (void)SpecialFiles::getStdout()->locked().flush();
   (void)SpecialFiles::getStderr()->locked().flush();
-  */
+
 }
 
 WasmFS::~WasmFS() {
@@ -2981,9 +2986,8 @@ WasmFS::~WasmFS() {
 
 
 
-/*
+
 boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
-    /*
   auto rootBackend = wasmfs_create_root_dir();
   auto rootDirectory =
     rootBackend->createDirectory(S_IRUGO | S_IXUGO | S_IWUGO);
@@ -2995,6 +2999,7 @@ boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
   // If the /dev/ directory does not already exist, create it. (It may already
   // exist in NODERAWFS mode, or if those files have been preloaded.)
   auto devDir = lockedRoot.insertDirectory("dev", S_IRUGO | S_IXUGO);
+
   if (devDir) {
     auto lockedDev = devDir->locked();
     lockedDev.mountChild("null", SpecialFiles::getNull());
@@ -3011,9 +3016,7 @@ boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
   lockedRoot.insertDirectory("tmp", S_IRWXUGO);
 
   return rootDirectory;
-  * /
- return nullptr;
-}*/
+}
 
 // Initialize files specified by the --preload-file option.
 // Set up directories and files in wasmFS$preloadedDirs and
@@ -3022,7 +3025,6 @@ boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
 
 void WasmFS::preloadFiles() {
     return;
-    /*
   // Debug builds only: add check to ensure preloadFiles() is called once.
 #ifndef NDEBUG
   static std::atomic<int> timesCalled;
@@ -3088,7 +3090,6 @@ void WasmFS::preloadFiles() {
     created->locked().preloadFromJS(i);
     
   }
-  */
 }
 
 } // namespace wasmfs
@@ -3101,7 +3102,7 @@ void WasmFS::preloadFiles() {
 // Current Status: Work in Progress.
 // See https://github.com/emscripten-core/emscripten/issues/15041.
 
-/*
+
 namespace wasmfs::SpecialFiles {
 
 namespace {
@@ -3181,7 +3182,6 @@ protected:
                     size_t len,
                     void (*console_write)(const char*),
                     std::vector<char>& fd_write_buffer) {
-                        /*
     for (size_t j = 0; j < len; j++) {
       uint8_t current = buf[j];
       // Flush on either a null or a newline.
@@ -3194,7 +3194,6 @@ protected:
       }
     }
     return len;
-    * /
   }
 
 public:
@@ -3241,14 +3240,12 @@ class RandomFile : public DataFile {
   }
 
   ssize_t read(uint8_t* buf, size_t len, off_t offset) override {
-    /*
     uint8_t* end = buf + len;
     for (; buf < end; buf += 256) {
       [[maybe_unused]] int err = getentropy(buf, std::min(end - buf, 256l));
       assert(err == 0);
     }
     return len;
-    * /
   };
 
   int flush() override { return 0; }
@@ -3261,40 +3258,40 @@ public:
 
 } // anonymous namespace
 
-/*
+
 boost::shared_ptr<DataFile> getNull() {
-  static auto null = boost::make_shared<NullFile>();
+  static boost::shared_ptr<NullFile> null;
   return null;
 }
 
 boost::shared_ptr<DataFile> getStdin() {
-  static auto stdin = boost::make_shared<StdinFile>();
+  static boost::shared_ptr<StdinFile> stdin;
   return stdin;
 }
 
 boost::shared_ptr<DataFile> getStdout() {
-  static auto stdout = boost::make_shared<StdoutFile>();
+  static boost::shared_ptr<StdoutFile> stdout;
   return stdout;
 }
 
 boost::shared_ptr<DataFile> getStderr() {
-  static auto stderr = boost::make_shared<StderrFile>();
+  static boost::shared_ptr<StderrFile> stderr;
   return stderr;
 }
 
 boost::shared_ptr<DataFile> getRandom() {
-  static auto random = boost::make_shared<RandomFile>();
+  static boost::shared_ptr<RandomFile> random;
   return random;
 }
 
 boost::shared_ptr<DataFile> getURandom() {
-  static auto urandom = boost::make_shared<RandomFile>();
+  static boost::shared_ptr<RandomFile> urandom;
   return urandom;
 }
-* /
+
 
 } // namespace wasmfs::SpecialFiles
-*/
+
 // Copyright 2021 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
@@ -3309,9 +3306,7 @@ namespace wasmfs {
 //
 // DataFile
 //
-/*
 void DataFile::Handle::preloadFromJS(int index) {
-    /*
   // TODO: Each Datafile type could have its own impl of file preloading.
   // Create a buffer with the required file size.
   std::vector<uint8_t> buffer(_wasmfs_get_preloaded_file_size(index));
@@ -3323,7 +3318,6 @@ void DataFile::Handle::preloadFromJS(int index) {
   _wasmfs_copy_preloaded_file_data(index, buffer.data());
 
   write((const uint8_t*)buffer.data(), buffer.size(), 0);
-  * /
 }
 
 //
@@ -3336,22 +3330,21 @@ void Directory::Handle::cacheChild(const std::string& name,
   // Update the dcache if the backend hasn't opted out of using the dcache or if
   // this is a mount point, in which case it is not under the control of the
   // backend.
-  /*
   if (kind == DCacheKind::Mount || !getDir()->maintainsFileIdentity()) {
     auto& dcache = getDir()->dcache;
-    [[maybe_unused]] auto [_, inserted] = dcache.insert({name, {kind, child}});
+    auto inserted = dcache.insert({name, {kind, child}});
     assert(inserted && "inserted child already existed!");
   }
+    return;
+
   // Set the child's parent.
   assert(child->locked().getParent() == nullptr ||
          child->locked().getParent() == getDir());
   child->locked().setParent(getDir());
-  * /
 }
 
 boost::shared_ptr<File> Directory::Handle::getChild(const std::string& name) {
   // Unlinked directories must be empty, without even "." or ".."
-  /*
   if (!getParent()) {
     return nullptr;
   }
@@ -3374,13 +3367,10 @@ boost::shared_ptr<File> Directory::Handle::getChild(const std::string& name) {
   }
   cacheChild(name, child, DCacheKind::Normal);
   return child;
-  * /
-    return nullptr;
 }
 
 bool Directory::Handle::mountChild(const std::string& name,
                                    boost::shared_ptr<File> child) {
-                                    /*
   assert(child);
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
@@ -3388,12 +3378,10 @@ bool Directory::Handle::mountChild(const std::string& name,
   }
   cacheChild(name, child, DCacheKind::Mount);
   return true;
-  * /;
 }
 
 boost::shared_ptr<DataFile>
 Directory::Handle::insertDataFile(const std::string& name, mode_t mode) {
-/*
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
     return nullptr;
@@ -3405,13 +3393,11 @@ Directory::Handle::insertDataFile(const std::string& name, mode_t mode) {
   cacheChild(name, child, DCacheKind::Normal);
   updateMTime();
   return child;
-  * /
 }
 
 boost::shared_ptr<Directory>
 Directory::Handle::insertDirectory(const std::string& name, mode_t mode) {
   // Cannot insert into an unlinked directory.
-  /*
   if (!getParent()) {
     return nullptr;
   }
@@ -3420,16 +3406,15 @@ Directory::Handle::insertDirectory(const std::string& name, mode_t mode) {
     return nullptr;
   }
   cacheChild(name, child, DCacheKind::Normal);
+  return nullptr;
   updateMTime();
   return child;
-  * /
 }
 
 
 boost::shared_ptr<Symlink>
 Directory::Handle::insertSymlink(const std::string& name,
                                  const std::string& target) {
-                                /*
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
     return nullptr;
@@ -3441,7 +3426,6 @@ Directory::Handle::insertSymlink(const std::string& name,
   cacheChild(name, child, DCacheKind::Normal);
   updateMTime();
   return child;
-  * /
 }
 
 // TODO: consider moving this to be `Backend::move` to avoid asymmetry between
@@ -3449,7 +3433,6 @@ Directory::Handle::insertSymlink(const std::string& name,
 // arguments to prove that the directories have already been locked.
 int Directory::Handle::insertMove(const std::string& name,
                                   boost::shared_ptr<File> file) {
-  /*
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
     return -EPERM;
@@ -3495,11 +3478,9 @@ int Directory::Handle::insertMove(const std::string& name,
   updateMTime();
 
   return 0;
-  * /
 }
 
 int Directory::Handle::removeChild(const std::string& name) {
-    /*
   auto& dcache = getDir()->dcache;
   auto entry = dcache.find(name);
   // If this is a mount, we don't need to call into the backend.
@@ -3517,11 +3498,9 @@ int Directory::Handle::removeChild(const std::string& name) {
   }
   updateMTime();
   return 0;
-  * /
 }
 
 std::string Directory::Handle::getName(boost::shared_ptr<File> file) {
-  /*
   if (getDir()->maintainsFileIdentity()) {
     return getDir()->getName(file);
   }
