@@ -12,7 +12,8 @@ Only imports (functions you need to define) are:
 ```c++
 // stdin/stdout/stderr are typically part of a file system
 size_t read_stdin(uint8_t* buf, size_t len, off_t offset);
-size_t write_stdout(const uint8_t* buf, size_t len, off_t offset);size_t write_stderr(const uint8_t* buf, size_t len, off_t offset);
+size_t write_stdout(const uint8_t* buf, size_t len, off_t offset);
+size_t write_stderr(const uint8_t* buf, size_t len, off_t offset);
 ```
 
 ```c++
