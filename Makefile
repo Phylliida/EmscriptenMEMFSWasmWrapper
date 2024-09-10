@@ -4,13 +4,13 @@
 EMCC = ./emscripten/emcc
 
 # Source file
-SRC = ayy.cpp
-
+SRC = memfs_init.cpp 
 # Output file
 OUT = memfs.wasm
 
 # Emscripten flags
 EMFLAGS = -s WASM=1 \
+          -s WASMFS=0 \
           -s SIDE_MODULE=0 \
           -s EXPORTED_FUNCTIONS='[]' \
           -s FILESYSTEM=1 \
@@ -19,6 +19,7 @@ EMFLAGS = -s WASM=1 \
           -s STANDALONE_WASM \
           -s ALLOW_MEMORY_GROWTH=1 \
           -s USE_BOOST_HEADERS=1 \
+          -Iwasmfs \
           -fno-exceptions \
           --no-entry
 

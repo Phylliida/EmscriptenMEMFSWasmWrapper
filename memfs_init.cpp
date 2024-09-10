@@ -1,36 +1,34 @@
 // need to do this:https://github.com/emscripten-core/emscripten/issues/22249#issuecomment-2240873930
+#define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
 
 #include <emscripten.h>
-#include <syscall_arch.h>
 #include <stdio.h>
 #include <string.h>
-#include "js_api.h"
+
+// just modify cache/sysroot/include/wasi/api.h functions you don't want to have imports to be dummy things instead
+// actually stub out
+// ../../../system/lib/wasmfs/syscalls.cpp
+// and we will define it here (after doing that, delete cache)
+
+//#include "js_api.h"
+// normally never include cpp but we gotta do this so symbols aren't multiply defined
+// from hack that removes fd_write
+//#include "wasmfs/emscripten.cpp"
+
+#include "wasmfs/file_table.cpp"
+#include "wasmfs/file.cpp"
+#include "wasmfs/paths.cpp"
+#include "wasmfs/special_files.cpp"
+#include "wasmfs/support.cpp"
+#include "wasmfs/syscalls.cpp"
+//#include "wasmfs/wasmfs.cpp"
+#include "wasmfs/backends/memory_backend.cpp"
+
+
 
 extern "C" {
 
-
-EMSCRIPTEN_KEEPALIVE
-__wasi_errno_t fd_write(
-    __wasi_fd_t fd,
-    /**
-     * List of scatter/gather vectors from which to retrieve data.
-     */
-    const __wasi_ciovec_t *iovs,
-
-    /**
-     * The length of the array pointed to by `iovs`.
-     */
-    size_t iovs_len,
-
-    /**
-     * The number of bytes written.
-     */
-    __wasi_size_t *nwritten
-) {
-   return __wasi_fd_write(fd, iovs, iovs_len, nwritten);
-}
-
-
+/*
 EMSCRIPTEN_KEEPALIVE
 void bees() {
    FILE* file = fopen("bees", "w");
@@ -38,6 +36,7 @@ void bees() {
    fwrite(text, sizeof(char), strlen(text), file);
    fclose(file);
 }
+*/
 
 #define js_index_t uintptr_t
 
@@ -49,29 +48,29 @@ void _wasmfs_jsimpl_free_file(js_index_t backend, js_index_t index)
 {
 
 }
-int _wasmfs_jsimpl_write(js_index_t backend,
+__wasi_errno_t _wasmfs_jsimpl_write(js_index_t backend,
                          js_index_t index,
                          const uint8_t* buffer,
                          size_t length,
                          off_t offset)
 {
-   return EOPNOTSUPP;
+   return 0;
 }
-int _wasmfs_jsimpl_read(js_index_t backend,
+__wasi_errno_t _wasmfs_jsimpl_read(js_index_t backend,
                         js_index_t index,
                         const uint8_t* buffer,
                         size_t length,
                         off_t offset)
 {
-   return EOPNOTSUPP;
+   return 0;
 }
-int _wasmfs_jsimpl_get_size(js_index_t backend, js_index_t index)
+__wasi_errno_t _wasmfs_jsimpl_get_size(js_index_t backend, js_index_t index)
 {
-   return EOPNOTSUPP;
+   return 0;
 }
-int _wasmfs_jsimpl_set_size(js_index_t backend, js_index_t index, off_t size)
+__wasi_errno_t _wasmfs_jsimpl_set_size(js_index_t backend, js_index_t index, off_t size)
 {
-   return EOPNOTSUPP;
+   return 0;
 }
 
 // Documentation from https://wasix.org/docs/api-reference/
@@ -93,8 +92,7 @@ __wasi_errno_t fd_advise(
     __wasi_filesize_t len,
     __wasi_advice_t advice
 ) {
-   __syscall_fadvise64((int)fd, (off_t)offset, (off_t)len, (int)advice);
-   //return posix_fadvise(fd, offset, len, advice);
+   //__syscall_fadvise64((int)fd, (off_t)offset, (off_t)len, (int)advice);
 }
 
 // fd_allocate
@@ -105,10 +103,10 @@ __wasi_errno_t fd_advise(
 // fd: The file descriptor to allocate space for.
 // offset: The offset from the start marking the beginning of the allocation.
 // len: The length from the offset marking the end of the allocation.
-int fd_allocate(int fd, off_t offset, off_t len) {
-  return _wasmfs_allocate(fd, offset, len);
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_allocate(__wasi_fd_t fd, off_t offset, off_t len) {
+  //return __syscall_fallocate(fd, 0, offset, len);
 }
-
 
 // fd_close
 // Close an open file descriptor.
@@ -116,7 +114,11 @@ int fd_allocate(int fd, off_t offset, off_t len) {
 // The fd_close() function is used to close an open file descriptor. For sockets, this function will flush the data before closing the socket.
 // Parameters
 // fd: The file descriptor mapping to an open file to close.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_close(__wasi_fd_t fd) {
+   // Don't bother with this, they are in memory
+   return 0;
+}
 
 // fd_datasync
 // Synchronize the file data to disk.
@@ -124,7 +126,10 @@ int fd_allocate(int fd, off_t offset, off_t len) {
 // The fd_datasync() function is used to synchronize the file data associated with a file descriptor to disk. It ensures that any modified data for the file is written to the underlying storage device.
 // Parameters
 // fd: The file descriptor to synchronize.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_datasync(__wasi_fd_t fd) {
+   //return __syscall_fdatasync(fd);
+}
 
 // fd_fdstat_get
 // Get metadata of a file descriptor.
@@ -134,7 +139,10 @@ int fd_allocate(int fd, off_t offset, off_t len) {
 // Parameters
 // fd: The file descriptor whose metadata will be accessed.
 // buf_ptr: A WebAssembly pointer to a memory location where the metadata will be written.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
+   //return __wasi_fd_fdstat_get(fd, stat);
+}
 
 // fd_fdstat_set_flags
 // The fd_fdstat_set_flags() function is used to set the file descriptor flags for a given file descriptor. File descriptor flags modify the behavior and characteristics of the file descriptor, allowing applications to customize its behavior according to specific requirements.

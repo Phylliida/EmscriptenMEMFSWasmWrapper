@@ -6,9 +6,33 @@
 // old JS version. Current Status: Work in Progress. See
 // https://github.com/emscripten-core/emscripten/issues/15041.
 
+#include <cstdint>
+#include <cstddef>
+
+
+
 #define _LARGEFILE64_SOURCE // For F_GETLK64 etc
 #define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
 #define BOOST_DISABLE_ASSERTS
+
+#include <exception>
+
+// remove boost exceptions completely
+#define BOOST_NO_EXCEPTIONS
+#define BOOST_EXCEPTION_DISABLE 
+#define BOOST_THROW_EXCEPTION_HPP_INCLUDED
+namespace boost {
+    // define these since we remove exceptions
+    void throw_exception( std::exception const & e ) {
+
+    }
+    //void throw_exception( std::exception const & e, boost::source_location const & loc ) {
+
+    //}
+}
+
+
+
 // Copyright 2022 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
@@ -29,10 +53,35 @@
 #include <boost/assert.hpp>
 #include <boost/config.hpp>
 
+extern "C" {
+EMSCRIPTEN_KEEPALIVE
+int fd_write(
+    int fd,
+    /**
+     * List of scatter/gather vectors from which to retrieve data.
+     */
+    int iovs,
+
+    /**
+     * The length of the array pointed to by `iovs`.
+     */
+    int iovs_len,
+
+    /**
+     * The number of bytes written.
+     */
+     int nwritten
+)
+ {
+
+
+ }
+}
+
 // stuff done:
 // use this custom enable_shared_from_this_no_throw to prevent exception when shared_ptr created
 // -fno-exceptions prevents std::map insert from throwing exceptions
-
+// std::make_shared can throw an exception, just allocate them with constructor instead
 
 namespace boost
 {
@@ -183,9 +232,9 @@ public:
   }
 
   template<class T> boost::shared_ptr<T> cast() {
-    static_assert(std::is_base_of<File, T>::value,
-                  "File is not a base of destination type T");
-    assert(int(kind) == int(T::expectedKind));
+    //static_assert(std::is_base_of<File, T>::value,
+    //              "File is not a base of destination type T");
+    //assert(int(kind) == int(T::expectedKind));
     return boost::static_pointer_cast<T>(shared_from_this());
   }
 
@@ -727,7 +776,7 @@ public:
   class Handle : public DataFile::Handle {
 
     boost::shared_ptr<MemoryDataFile> getFile() {
-      return file->cast<MemoryDataFile>();
+      return boost::shared_ptr<MemoryDataFile>((MemoryDataFile*)file.get());
     }
 
   public:
@@ -1019,7 +1068,7 @@ extern WasmFS wasmFS;
 } // namespace wasmfs
 
 
-/*
+
 // File permission macros for wasmfs.
 // Used to improve readability compared to those in stat.h
 #define WASMFS_PERM_READ 0444
@@ -1034,7 +1083,7 @@ extern WasmFS wasmFS;
 extern "C" {
 
 using namespace wasmfs;
-
+/*
 int __syscall_dup3(int oldfd, int newfd, int flags) {
   if (flags & !O_CLOEXEC) {
     // TODO: Test this case.
@@ -1069,7 +1118,7 @@ int __syscall_dup(int fd) {
   }
   return fileTable.addEntry(openFile);
 }
-
+*/
 // This enum specifies whether file offset will be provided by the open file
 // state or provided by argument in the case of pread or pwrite.
 enum class OffsetHandling { OpenFileState, Argument };
@@ -1233,16 +1282,15 @@ static __wasi_errno_t readAtOffset(OffsetHandling setOffset,
   }
   return __WASI_ERRNO_SUCCESS;
 }
-
 EMSCRIPTEN_KEEPALIVE
-__wasi_errno_t fd_write(__wasi_fd_t fd,
+__wasi_errno_t __wasif_fd_write(__wasi_fd_t fd,
                                const __wasi_ciovec_t* iovs,
                                size_t iovs_len,
                                __wasi_size_t* nwritten) {
   return writeAtOffset(
     OffsetHandling::OpenFileState, fd, iovs, iovs_len, nwritten);
 }
-
+/*
 
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_read(__wasi_fd_t fd,
@@ -2783,8 +2831,9 @@ int __syscall__newselect(int nfds,
   //          https://man7.org/linux/man-pages/man2/select.2.html
   return -ENOMEM;
 }
-}
 */
+}
+
 
 namespace wasmfs {
 
@@ -2836,7 +2885,6 @@ FileTable::Handle::setEntry(__wasi_fd_t fd,
 __wasi_fd_t
 FileTable::Handle::addEntry(boost::shared_ptr<OpenFileState> openFileState) {
   
-/*
   // TODO: add freelist to avoid linear lookup time.
   for (__wasi_fd_t i = 0;; i++) {
     if (!getEntry(i)) {
@@ -2845,13 +2893,13 @@ FileTable::Handle::addEntry(boost::shared_ptr<OpenFileState> openFileState) {
     }
   }
   return -EBADF;
-  */
+  
 }
 
 int OpenFileState::create(boost::shared_ptr<File> file,
                           oflags_t flags,
                           boost::shared_ptr<OpenFileState>& out) {
-    /*
+    
   assert(file);
   std::vector<Directory::Entry> dirents;
   if (auto f = file->dynCast<DataFile>()) {
@@ -2870,10 +2918,9 @@ int OpenFileState::create(boost::shared_ptr<File> file,
     dirents.insert(dirents.end(), entries->begin(), entries->end());
   }
 
-  out = boost::make_shared<OpenFileState>(
-    private_key{0}, flags, file, std::move(dirents));
+  out = boost::shared_ptr<OpenFileState>(new OpenFileState(private_key{0}, flags, file, std::move(dirents)));
   return 0;
-  */
+  
 }
 } // extern "C"
 
@@ -2893,14 +2940,13 @@ namespace wasmfs {
 // Special backends that want to install themselves as the root use this hook.
 // Otherwise, we use the default backends.
 backend_t wasmfs_create_root_dir(void) {
-/*
-#ifdef WASMFS_CASE_INSENSITIVE
-  //return createIgnoreCaseBackend([]() { return createMemoryBackend(); });
-#else
+
+//#ifdef WASMFS_CASE_INSENSITIVE
+//  return createIgnoreCaseBackend([]() { return createMemoryBackend(); });
+//#else
   return createMemoryBackend();
-#endif
-*/
-return NULL;
+//#endif
+
 }
 
 #ifdef WASMFS_CASE_INSENSITIVE
@@ -2988,6 +3034,7 @@ WasmFS::~WasmFS() {
 
 
 boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
+
   auto rootBackend = wasmfs_create_root_dir();
   auto rootDirectory =
     rootBackend->createDirectory(S_IRUGO | S_IXUGO | S_IWUGO);
@@ -2995,7 +3042,6 @@ boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
 
   // The root directory is its own parent.
   lockedRoot.setParent(rootDirectory);
-
   // If the /dev/ directory does not already exist, create it. (It may already
   // exist in NODERAWFS mode, or if those files have been preloaded.)
   auto devDir = lockedRoot.insertDirectory("dev", S_IRUGO | S_IXUGO);
@@ -3812,18 +3858,23 @@ std::string MemoryDirectory::getName(boost::shared_ptr<File> file) {
 class MemoryBackend : public Backend {
 public:
   boost::shared_ptr<DataFile> createFile(mode_t mode) override {
-    return boost::make_shared<MemoryDataFile>(mode, this);
+    return nullptr;
+    //return boost::shared_ptr<MemoryDataFile>(new MemoryDataFile(mode, this));
   }
   boost::shared_ptr<Directory> createDirectory(mode_t mode) override {
-    return boost::make_shared<MemoryDirectory>(mode, this);
+    return nullptr;
+    //return boost::shared_ptr<MemoryDirectory>(new MemoryDirectory(mode, this));
   }
   boost::shared_ptr<Symlink> createSymlink(std::string target) override {
-    return boost::make_shared<MemorySymlink>(target, this);
+    return nullptr;
+    //return boost::shared_ptr<MemorySymlink>(new MemorySymlink(target, this));
   }
 };
 
 backend_t createMemoryBackend() {
-  return wasmFS.addBackend(std::make_unique<MemoryBackend>());
+  auto bees =  (new MemoryBackend());
+  //return wasmFS.addBackend();
+  return nullptr;
 }
 
 extern "C" {
