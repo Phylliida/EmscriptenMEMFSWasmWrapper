@@ -9,6 +9,25 @@
 #include <cstdint>
 #include <cstddef>
 
+#include <dirent.h>
+#include <emscripten/emscripten.h>
+#include <emscripten/heap.h>
+#include <emscripten/html5.h>
+#include <errno.h>
+#include <mutex>
+#include <poll.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/statfs.h>
+#include <syscall_arch.h>
+#include <unistd.h>
+#include <utility>
+#include <vector>
+#include <wasi/api.h>
+
 
 
 #define _LARGEFILE64_SOURCE // For F_GETLK64 etc
@@ -111,14 +130,14 @@ public:
 
     boost::shared_ptr<T> shared_from_this()
     {
-        boost::shared_ptr<T> p( weak_this_, NO_THROW_TAG);
+        boost::shared_ptr<T> p( weak_this_);
         //BOOST_ASSERT( p.get() == this );
         return p;
     }
 
     boost::shared_ptr<T const> shared_from_this() const
     {
-        boost::shared_ptr<T const> p( weak_this_, NO_THROW_TAG );
+        boost::shared_ptr<T const> p( weak_this_);
         //BOOST_ASSERT( p.get() == this );
         return p;
     }
@@ -140,6 +159,16 @@ private:
 };
 
 }
+
+
+
+
+// Copyright 2022 The Emscripten Authors.  All rights reserved.
+// Emscripten is available under two separate licenses, the MIT license and the
+// University of Illinois/NCSA Open Source License.  Both these licenses can be
+// found in the LICENSE file.
+
+
 
 //#include <emscripten/threading.h>
 int emscripten_is_main_runtime_thread() { return 1;};
@@ -1083,7 +1112,7 @@ extern WasmFS wasmFS;
 extern "C" {
 
 using namespace wasmfs;
-/*
+
 int __syscall_dup3(int oldfd, int newfd, int flags) {
   if (flags & !O_CLOEXEC) {
     // TODO: Test this case.
@@ -1118,7 +1147,6 @@ int __syscall_dup(int fd) {
   }
   return fileTable.addEntry(openFile);
 }
-*/
 // This enum specifies whether file offset will be provided by the open file
 // state or provided by argument in the case of pread or pwrite.
 enum class OffsetHandling { OpenFileState, Argument };
@@ -1290,7 +1318,6 @@ __wasi_errno_t __wasif_fd_write(__wasi_fd_t fd,
   return writeAtOffset(
     OffsetHandling::OpenFileState, fd, iovs, iovs_len, nwritten);
 }
-/*
 
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_read(__wasi_fd_t fd,
@@ -1299,6 +1326,7 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
                               __wasi_size_t* nread) {
   return readAtOffset(OffsetHandling::OpenFileState, fd, iovs, iovs_len, nread);
 }
+
 
 
 
@@ -1321,7 +1349,6 @@ __wasi_errno_t fd_pread(__wasi_fd_t fd,
   return readAtOffset(
     OffsetHandling::Argument, fd, iovs, iovs_len, nread, offset);
 }
-
 
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_close(__wasi_fd_t fd) {
@@ -1608,6 +1635,7 @@ static __wasi_fd_t doOpen(path::ParsedParent parsed,
   return wasmFS.getFileTable().locked().addEntry(openFile);
 }
 
+
 // This function is exposed to users and allows users to create a file in a
 // specific backend. An fd to an open file is returned.
 EMSCRIPTEN_KEEPALIVE
@@ -1642,7 +1670,6 @@ int __syscall_mknodat(int dirfd, intptr_t path, int mode, int dev) {
                 NullBackend,
                 OpenReturnMode::Nothing);
 }
-
 static int
 doMkdir(path::ParsedParent parsed, int mode, backend_t backend = NullBackend) {
   if (auto err = parsed.getError()) {
@@ -1782,6 +1809,7 @@ int __syscall_fchdir(int fd) {
   return doChdir(openFile->locked().getFile());
 }
 
+
 int __syscall_getcwd(intptr_t buf, size_t size) {
   // Check if buf points to a bad address.
   if (!buf && size > 0) {
@@ -1910,6 +1938,63 @@ int __syscall_unlinkat(int dirfd, intptr_t path, int flags) {
   return lockedParent.removeChild(childName);
 }
 
+#include <queue>
+
+namespace wasmfs {
+
+// The data shared between the two sides of a pipe.
+// TODO: Consider switching to a ring buffer for performance and code size if we
+//       don't need unbounded pipes.
+using PipeData = std::queue<uint8_t>;
+
+// A PipeFile is a simple file that has a reference to a PipeData that it
+// either reads from or writes to. A pair of PipeFiles comprise the two ends of
+// a pipe.
+class PipeFile : public DataFile {
+  boost::shared_ptr<PipeData> data;
+
+  int open(oflags_t) override { return 0; }
+  int close() override { return 0; }
+
+  ssize_t write(const uint8_t* buf, size_t len, off_t offset) override {
+    for (size_t i = 0; i < len; i++) {
+      data->push(buf[i]);
+    }
+    return len;
+  }
+
+  ssize_t read(uint8_t* buf, size_t len, off_t offset) override {
+    for (size_t i = 0; i < len; i++) {
+      if (data->empty()) {
+        return i;
+      }
+      buf[i] = data->front();
+      data->pop();
+    }
+    return len;
+  }
+
+  int flush() override { return 0; }
+
+  off_t getSize() override { return data->size(); }
+
+  // TODO: Should this return an error?
+  int setSize(off_t size) override { return 0; }
+
+public:
+  // PipeFiles do not have or need a backend. Pass NullBackend to the parent for
+  // that.
+  PipeFile(mode_t mode, boost::shared_ptr<PipeData> data)
+    : DataFile(mode, NullBackend), data(data) {
+    // Reads are always from the front; writes always to the end.
+    seekable = false;
+  }
+};
+} // namespace wasmfs
+
+
+
+
 int __syscall_rmdir(intptr_t path) {
   return __syscall_unlinkat(AT_FDCWD, path, AT_REMOVEDIR);
 }
@@ -1946,7 +2031,6 @@ int wasmfs_unmount(intptr_t path) {
   // Input is valid, perform the unlink.
   return lockedParent.removeChild(childName);
 }
-
 int __syscall_getdents64(int fd, intptr_t dirp, size_t count) {
   dirent* result = (dirent*)dirp;
 
@@ -2119,6 +2203,7 @@ int __syscall_renameat(int olddirfd,
   return 0;
 }
 
+
 // TODO: Test this with non-AT_FDCWD values.
 int __syscall_symlinkat(intptr_t target, int newdirfd, intptr_t linkpath) {
   auto parsed = path::parseParent((char*)linkpath, newdirfd);
@@ -2237,7 +2322,6 @@ int __syscall_fchmodat2(int dirfd, intptr_t path, int mode, int flags) {
 int __syscall_chmod(intptr_t path, int mode) {
   return __syscall_fchmodat2(AT_FDCWD, path, mode, 0);
 }
-
 int __syscall_fchmod(int fd, int mode) {
   auto openFile = wasmFS.getFileTable().locked().getEntry(fd);
   if (!openFile) {
@@ -2356,6 +2440,7 @@ static bool isTTY(boost::shared_ptr<File>& file) {
          file == SpecialFiles::getStdout() || file == SpecialFiles::getStderr();
 }
 
+
 int __syscall_ioctl(int fd, int request, ...) {
   auto openFile = wasmFS.getFileTable().locked().getEntry(fd);
   if (!openFile) {
@@ -2385,6 +2470,7 @@ int __syscall_ioctl(int fd, int request, ...) {
   }
 }
 
+
 int __syscall_pipe(intptr_t fd) {
   auto* fds = (__wasi_fd_t*)fd;
 
@@ -2406,6 +2492,7 @@ int __syscall_pipe(intptr_t fd) {
 
   return 0;
 }
+
 
 // int poll(struct pollfd* fds, nfds_t nfds, int timeout);
 int __syscall_poll(intptr_t fds_, int nfds, int timeout) {
@@ -2458,6 +2545,8 @@ int __syscall_poll(intptr_t fds_, int nfds, int timeout) {
   //       pthreads and asyncify).
   return nonzero;
 }
+
+
 
 int __syscall_fallocate(int fd, int mode, off_t offset, off_t len) {
   assert(mode == 0); // TODO, but other modes were never supported in the old FS
@@ -2581,6 +2670,7 @@ int __syscall_fcntl64(int fd, int cmd, ...) {
     }
   }
 }
+
 
 static int
 doStatFS(boost::shared_ptr<File>& file, size_t size, struct statfs* buf) {
@@ -2716,7 +2806,6 @@ int _mmap_js(size_t length,
 
   return 0;
 }
-
 int _msync_js(
   intptr_t addr, size_t length, int prot, int flags, int fd, off_t offset) {
   // TODO: This is not correct! Mappings should be associated with files, not
@@ -2831,14 +2920,13 @@ int __syscall__newselect(int nfds,
   //          https://man7.org/linux/man-pages/man2/select.2.html
   return -ENOMEM;
 }
-*/
 }
 
 
 namespace wasmfs {
 
 FileTable::FileTable() {
-/*  
+  
   entries.emplace_back();
   (void)OpenFileState::create(
     SpecialFiles::getStdin(), O_RDONLY, entries.back());
@@ -2848,23 +2936,22 @@ FileTable::FileTable() {
   entries.emplace_back();
   (void)OpenFileState::create(
     SpecialFiles::getStderr(), O_WRONLY, entries.back());
-  */  
+  
 }
 
 boost::shared_ptr<OpenFileState> FileTable::Handle::getEntry(__wasi_fd_t fd) {
-   /*
+  
   if (fd >= fileTable.entries.size() || fd < 0) {
     return nullptr;
   }
   return fileTable.entries[fd];
-  */
+  
  return nullptr;
 }
 
 boost::shared_ptr<DataFile>
 FileTable::Handle::setEntry(__wasi_fd_t fd,
                             boost::shared_ptr<OpenFileState> openFile) {
-    /*
   assert(fd >= 0);
   if (fd >= fileTable.entries.size()) {
     fileTable.entries.resize(fd + 1);
@@ -2878,8 +2965,6 @@ FileTable::Handle::setEntry(__wasi_fd_t fd,
   }
   fileTable.entries[fd] = openFile;
   return ret;
-  */
- return nullptr;
 }
 
 __wasi_fd_t
