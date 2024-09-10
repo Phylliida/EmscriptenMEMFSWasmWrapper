@@ -1,6 +1,7 @@
 #define NDEBUG // needed to prevent support from using logging
 #define NO_EMSCRIPTEN_ERROR // flag added to stop errors in wasmfs
-
+// found https://github.com/cloudflare/workers-wasi, might b useful
+// found https://github.com/wasmerio/kernel-wasm
 #include <syscalls.cpp>
 #include <file_table.cpp>
 #include <file.cpp>
@@ -68,7 +69,7 @@ __wasi_errno_t fd_advise(
     __wasi_filesize_t len,
     __wasi_advice_t advice
 ) {
-   __syscall_fadvise64((int)fd, (off_t)offset, (off_t)len, (int)advice);
+   return __syscall_fadvise64((int)fd, (off_t)offset, (off_t)len, (int)advice);
 }
 
 // fd_allocate
@@ -129,7 +130,7 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_fdstat_set_flags(__wasi_fd_t fd, std::uint16_t flags) {
    // stub for now, ignored
-   return 0;
+   return __WASI_ERRNO_SUCCESS;
 }
 
 
@@ -145,7 +146,7 @@ __wasi_errno_t fd_fdstat_set_flags(__wasi_fd_t fd, std::uint16_t flags) {
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_fdstat_set_rights(__wasi_fd_t fd, std::uint64_t fs_rights_base, std::uint64_t fs_rights_inheriting) {
    // stub for now, ignored
-   return 0;
+   return __WASI_ERRNO_SUCCESS;
 }
 
 // fd_filestat_get
@@ -184,7 +185,19 @@ __wasi_errno_t fd_filestat_set_size(int fd, off_t size) {
 // st_atim: The last accessed time to set.
 // st_mtim: The last modified time to set.
 // fst_flags: A bit-vector that controls which times to set.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_filestat_set_times(int fd,
+   __wasi_timestamp_t st_atim,
+   __wasi_timestamp_t st_mtim,
+   __wasi_fstflags_t fst_flags) {
+   auto openFile = wasmFS.getFileTable().locked().getEntry(fd);
+   if (!openFile) {
+      return -EBADF;
+   }
+   auto locked = openFile->locked().getFile();
+   
+   return __set_times(locked, st_atim, st_mtim);
+}
 
 // fd_pread
 // Read from the file at the given offset without updating the file cursor. This acts like a stateless version of Seek + Read.
@@ -197,7 +210,14 @@ __wasi_errno_t fd_filestat_set_size(int fd, off_t size) {
 // iovs_len: The number of vectors (__wasi_iovec_t) in the iovs array.
 // offset: The file cursor indicating the starting position from which data will be read.
 // nread: A pointer to store the number of bytes read.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_pread(__wasi_fd_t fd,
+                               const __wasi_iovec_t* iovs,
+                               size_t iovs_len,
+                               __wasi_filesize_t offset,
+                               __wasi_size_t* nread) {
+   return __wasi_fd_pread(fd, iovs, iovs_len, offset, nread);
+}
 
 // fd_prestat_get
 // Get metadata about a preopened file descriptor.
@@ -207,7 +227,13 @@ __wasi_errno_t fd_filestat_set_size(int fd, off_t size) {
 // Parameters
 // fd: The preopened file descriptor to query.
 // buf: A pointer to a Prestat structure where the metadata will be written.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_prestat_get(
+    __wasi_fd_t fd,
+    __wasi_prestat_t *buf) {
+   // stub
+   return __WASI_ERRNO_SUCCESS;
+}
 
 // fd_prestat_dir_name
 // Get the directory name associated with a preopened file descriptor.
@@ -218,6 +244,19 @@ __wasi_errno_t fd_filestat_set_size(int fd, off_t size) {
 // fd: The preopened file descriptor to query.
 // path: A pointer to a buffer where the directory name will be written.
 // path_len: The maximum length of the buffer.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_prestat_dir_name(
+    __wasi_fd_t fd,
+
+    /**
+     * A buffer into which to write the preopened directory name.
+     */
+    uint8_t * path,
+
+    __wasi_size_t path_len) {
+   // stub
+   return __WASI_ERRNO_SUCCESS;
+}
 
 
 // fd_pwrite
@@ -231,7 +270,15 @@ __wasi_errno_t fd_filestat_set_size(int fd, off_t size) {
 // iovs_len: The number of vectors (__wasi_ciovec_t) in the iovs array.
 // offset: The offset indicating the position at which the data will be written.
 // nwritten: A pointer to store the number of bytes written.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_pwrite(
+    __wasi_fd_t fd,
+    const __wasi_ciovec_t *iovs,
+    size_t iovs_len,
+    __wasi_filesize_t offset,
+    __wasi_size_t *nwritten) {
+      return __wasi_fd_pwrite(fd, iovs, iovs_len, offset, nwritten);
+}
 
 // fd_read
 // Read data from a file descriptor.
@@ -251,6 +298,7 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
                               __wasi_size_t* nread) {
   return readAtOffset(OffsetHandling::OpenFileState, fd, iovs, iovs_len, nread);
 }
+
 // fd_readdir
 // Read data from a directory specified by the file descriptor.
 // Description
@@ -261,7 +309,18 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
 // buf_len: The length of the buffer in bytes.
 // cookie: The directory cookie indicating the position to start reading from.
 // bufused: A pointer to store the number of bytes stored in the buffer.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_readdir(
+    __wasi_fd_t fd,
+    uint8_t * buf,
+    __wasi_size_t buf_len,
+   __wasi_dircookie_t cookie,
+    __wasi_size_t *bufused
+) {
+   // todo: support cookies
+   *bufused = __syscall_getdents64((int)fd, (intptr_t)buf, (size_t)buf_len);
+   return __WASI_ERRNO_SUCCESS;
+}
 
 // fd_renumber
 // Atomically copy a file descriptor.
@@ -270,6 +329,14 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
 // Parameters
 // from: The file descriptor to copy.
 // to: The location to copy the file descriptor to.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_renumber(
+    __wasi_fd_t fd,
+    __wasi_fd_t to
+) {
+   // todo: not sure if this copies, or just links? pretty sure it copies since there's a seperate symlink but should check
+   return __syscall_dup3((int)fd, (int)to, 0);
+}
 
 
 // fd_seek
@@ -281,6 +348,15 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
 // offset: The number of bytes to adjust the offset by.
 // whence: The position that the offset is relative to.
 // newoffset: A WebAssembly memory pointer where the new offset will be stored.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_seek(
+    __wasi_fd_t fd,
+    __wasi_filedelta_t offset,
+    __wasi_whence_t whence,
+    __wasi_filesize_t *newoffset
+) {
+   return __wasi_fd_seek(fd, offset, whence, newoffset);
+}
 
 
 // fd_sync
@@ -289,7 +365,10 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
 // The fd_sync() function synchronizes the file and metadata associated with a file descriptor to disk. This ensures that any changes made to the file and its metadata are persisted and visible to other processes.
 // Parameters
 // fd: The file descriptor to sync.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_sync(__wasi_fd_t fd) {
+   return __wasi_fd_sync(fd);
+}
 
 // fd_tell
 // Get the offset of the file descriptor.
@@ -298,7 +377,25 @@ __wasi_errno_t fd_read(__wasi_fd_t fd,
 // Parameters
 // fd: The file descriptor to access.
 // offset: A wasm pointer to a Filesize where the offset will be written.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_tell(
+    __wasi_fd_t fd,
+    __wasi_filesize_t *offset
+) {
+  auto openFile = wasmFS.getFileTable().locked().getEntry(fd);
+  if (!openFile) {
+    return __WASI_ERRNO_BADF;
+  }
 
+  auto lockedOpenFile = openFile->locked();
+
+  *offset = lockedOpenFile.getPosition();
+
+  if (*offset < 0) {
+    return __WASI_ERRNO_INVAL;
+  }
+  return __WASI_ERRNO_SUCCESS;
+}
 
 // fd_write
 // Write data to the file descriptor.
@@ -327,7 +424,13 @@ __wasi_errno_t fd_write(__wasi_fd_t fd,
 // fd: The file descriptor representing the directory that the path is relative to.
 // path: A wasm pointer to a null-terminated string containing the path data.
 // path_len: The length of the path string.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_create_directory(
+    __wasi_fd_t fd,
+    const char *path,
+    size_t path_len) {
+      return __syscall_mkdirat((int)dirfd, (intptr_t)path, S_IRUGO | S_IXUGO); 
+}
 
 // path_filestat_get
 // Access metadata about a file or directory.
@@ -340,7 +443,20 @@ __wasi_errno_t fd_write(__wasi_fd_t fd,
 // path: A wasm pointer to a null-terminated string containing the file path.
 // path_len: The length of the path string.
 // buf: A wasm pointer to a Filestat object where the metadata will be stored.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_filestat_get(
+    __wasi_fd_t fd,
+    __wasi_lookupflags_t flags,
+    const char *path,
+    size_t path_len,
+   __wasi_fdstat_t *buf
+) {
+   auto parsed = path::parseFile((char*)path);
+   if (auto err = parsed.getError()) {
+     return err;
+   }
+   return __get_file_stat(parsed.getFile(), buf);
+}
 
 // path_filestat_set_times
 // Update time metadata on a file or directory.
@@ -355,7 +471,22 @@ __wasi_errno_t fd_write(__wasi_fd_t fd,
 // st_atim: The timestamp that the last accessed time attribute is set to.
 // st_mtim: The timestamp that the last modified time attribute is set to.
 // fst_flags: A bitmask controlling which attributes are set.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_filestat_set_times(
+    __wasi_fd_t fd,
+    __wasi_lookupflags_t flags,
+    const char *path,
+    size_t path_len,
+    __wasi_timestamp_t st_atim,
+    __wasi_timestamp_t st_mtim,
+   __wasi_fstflags_t fst_flags
+) {
+   auto parsed = path::parseFile((char*)path, fd);
+   if (auto err = parsed.getError()) {
+     return err;
+   }   
+   return __set_times(parsed.getFile(), st_atim, st_mtim);
+}
 
 // path_link
 // Create a hard link.
@@ -370,7 +501,19 @@ __wasi_errno_t fd_write(__wasi_fd_t fd,
 // new_fd: The file descriptor representing the directory that the new_path is relative to.
 // new_path: A wasm pointer to a null-terminated string containing the new file path.
 // new_path_len: The length of the new_path string.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t __wasi_path_link(
+    __wasi_fd_t old_fd,
+    __wasi_lookupflags_t old_flags,
+    const char *old_path,
+    size_t old_path_len,
+    __wasi_fd_t new_fd,
+    const char *new_path,
+   size_t new_path_len
+) {
+   // todo: it's a lil sus that it doesn't use old_fd, look into that
+   return __syscall_symlinkat((intptr_t)new_path, new_fd, (intptr_t)old_path);
+}
 
 // path_open
 // Open a file located at the given path.
@@ -387,6 +530,28 @@ __wasi_errno_t fd_write(__wasi_fd_t fd,
 // fs_rights_inheriting: The rights of file descriptors derived from the created file descriptor.
 // fs_flags: The flags of the file descriptor.
 // fd: A wasm pointer to a WasiFd variable where the new file descriptor will be stored.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t __wasi_path_open(
+    __wasi_fd_t dirfd,
+    __wasi_lookupflags_t dirflags,
+    const char *path,
+    size_t path_len,
+    __wasi_oflags_t oflags,
+    __wasi_rights_t fs_rights_base,
+
+    __wasi_rights_t fs_rights_inherting,
+
+    __wasi_fdflags_t fdflags,
+    __wasi_fd_t *opened_fd) {
+
+   mode_t mode = 0;
+   *opened_fd = __syscall_openat2((int)dirfd,
+      (intptr_t)path,
+      dirflags,
+      oflags,
+      mode);
+   return __WASI_ERRNO_SUCCESS;
+}
 
 
 // path_readlink
@@ -401,7 +566,25 @@ __wasi_errno_t fd_write(__wasi_fd_t fd,
 // buf: A wasm pointer to a buffer where the target path of the symlink will be written.
 // buf_len: The available space in the buffer pointed to by buf.
 // buf_used: A wasm pointer to a variable where the number of bytes written to the buffer will be stored.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t __wasi_path_readlink(
+    __wasi_fd_t dir_fd,
+   const char *path,
+    size_t path_len,
+    uint8_t * buf,
+    __wasi_size_t buf_len,
+    __wasi_size_t *buf_used
+) {
+   int bytes = __syscall_readlinkat((int)dir_fd,
+                         (intptr_t)path,
+                         (intptr_t)buf,
+                         (size_t)buf_len);
+   if (bytes < 0) {
+      return -bytes;
+   }
+   *buf_used = bytes;
+   return __WASI_ERRNO_SUCCESS;
+}
 
 // path_remove_directory
 // Remove a directory.
