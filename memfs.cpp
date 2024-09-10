@@ -11,19 +11,12 @@
 
 #include <wasmfs.cpp> // only change is wrapping stuff in ifndef NO_EMSCRIPTEN_ERROR to prevent errors from importing fd_write (stub does not prevent this)
 
-// Imports required:
-// read_stdin, write_stdout, write_stderr
-//    these do what you'd expect, stdin/stdout/stderr are typically part of a file system
-// emscripten_notify_memory_growth
-//    some builtin one from emscripten idk how to get rid of, just make an empty stub
-// clock_time_get
-//    needed to put time data (last modified, etc.) on the in memory files
 
 extern "C" {
 
 // when the file system wants to read from stdin
 // should return the number of bytes read (which should be len)
-ssize_t read_stdin(uint8_t* buf, size_t len, off_t offset) __attribute__((
+size_t read_stdin(uint8_t* buf, size_t len, off_t offset) __attribute__((
     __import_module__("fs_wrapper"),
     __import_name__("read_stdin"),
     __warn_unused_result__
@@ -31,7 +24,7 @@ ssize_t read_stdin(uint8_t* buf, size_t len, off_t offset) __attribute__((
 
 // when the file system wants to write to stdout
 // should return the number of bytes written (which should be len)
-ssize_t write_stdout(const uint8_t* buf, size_t len, off_t offset) __attribute__((
+size_t write_stdout(const uint8_t* buf, size_t len, off_t offset) __attribute__((
     __import_module__("fs_wrapper"),
     __import_name__("write_stdout"),
     __warn_unused_result__
@@ -39,7 +32,7 @@ ssize_t write_stdout(const uint8_t* buf, size_t len, off_t offset) __attribute__
 
 // when the file system wants to write to stderr
 // should return the number of bytes written (which should be len)
-ssize_t write_stderr(const uint8_t* buf, size_t len, off_t offset) __attribute__((
+size_t write_stderr(const uint8_t* buf, size_t len, off_t offset) __attribute__((
     __import_module__("fs_wrapper"),
     __import_name__("write_stderr"),
     __warn_unused_result__
