@@ -573,6 +573,15 @@ int wasmfs_create_file(char* pathname, mode_t mode, backend_t backend) {
 }
 
 // TODO: Test this with non-AT_FDCWD values.
+__wasi_fd_t __syscall_openat2(int dirfd,
+  intptr_t path,
+  __wasi_lookupflags_t dir_flags,
+  __wasi_oflags_t oflags,
+  mode_t mode) {
+  return doOpen(path::parseParent((char*)path, dirfd), oflags, mode);
+}
+
+// TODO: Test this with non-AT_FDCWD values.
 int __syscall_openat(int dirfd, intptr_t path, int flags, ...) {
   mode_t mode = 0;
   va_list v1;
@@ -787,22 +796,39 @@ int __syscall_getcwd(intptr_t buf, size_t size) {
   return len;
 }
 
-__wasi_errno_t __wasi_fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
+static int __set_times(std::shared_ptr<File>& file, 
+  __wasi_timestamp_t st_atim,
+  __wasi_timestamp_t st_mtim
+   ) {
+   auto locked = file->locked();
+   if (st_atim != INFINITY) {
+      locked.setATime(st_atim);
+   }
+   if (st_mtim != INFINITY) {
+      locked.setMTime(st_mtim);
+   }
+   return __WASI_ERRNO_SUCCESS;
+}
+
+static int __get_file_stat(std::shared_ptr<File>& file, __wasi_fdstat_t* stat) {
   // TODO: This is only partial implementation of __wasi_fd_fdstat_get. Enough
   // to get __wasi_fd_is_valid working.
   // There are other fields in the stat structure that we should really
   // be filling in here.
-  auto openFile = wasmFS.getFileTable().locked().getEntry(fd);
-  if (!openFile) {
-    return __WASI_ERRNO_BADF;
-  }
-
-  if (openFile->locked().getFile()->is<Directory>()) {
+  if (file->is<Directory>()) {
     stat->fs_filetype = __WASI_FILETYPE_DIRECTORY;
   } else {
     stat->fs_filetype = __WASI_FILETYPE_REGULAR_FILE;
   }
-  return __WASI_ERRNO_SUCCESS;
+  return __WASI_ERRNO_SUCCESS;  
+}
+
+__wasi_errno_t __wasi_fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
+  auto openFile = wasmFS.getFileTable().locked().getEntry(fd);
+  if (!openFile) {
+    return __WASI_ERRNO_BADF;
+  }
+  return __get_file_stat(openFile->locked().getFile(), stat);
 }
 
 // TODO: Test this with non-AT_FDCWD values.

@@ -502,7 +502,7 @@ __wasi_errno_t path_filestat_set_times(
 // new_path: A wasm pointer to a null-terminated string containing the new file path.
 // new_path_len: The length of the new_path string.
 EMSCRIPTEN_KEEPALIVE
-__wasi_errno_t __wasi_path_link(
+__wasi_errno_t path_link(
     __wasi_fd_t old_fd,
     __wasi_lookupflags_t old_flags,
     const char *old_path,
@@ -531,7 +531,7 @@ __wasi_errno_t __wasi_path_link(
 // fs_flags: The flags of the file descriptor.
 // fd: A wasm pointer to a WasiFd variable where the new file descriptor will be stored.
 EMSCRIPTEN_KEEPALIVE
-__wasi_errno_t __wasi_path_open(
+__wasi_errno_t path_open(
     __wasi_fd_t dirfd,
     __wasi_lookupflags_t dirflags,
     const char *path,
@@ -567,7 +567,7 @@ __wasi_errno_t __wasi_path_open(
 // buf_len: The available space in the buffer pointed to by buf.
 // buf_used: A wasm pointer to a variable where the number of bytes written to the buffer will be stored.
 EMSCRIPTEN_KEEPALIVE
-__wasi_errno_t __wasi_path_readlink(
+__wasi_errno_t path_readlink(
     __wasi_fd_t dir_fd,
    const char *path,
     size_t path_len,
@@ -595,7 +595,22 @@ __wasi_errno_t __wasi_path_readlink(
 // fd: The file descriptor representing the base directory from which the path is resolved.
 // path: A wasm pointer to a null-terminated string containing the path of the directory to remove.
 // path_len: The length of the path string.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_remove_directory(
+    __wasi_fd_t fd,
 
+    /**
+     * The path to a directory to remove.
+     */
+    const char *path,
+
+    /**
+     * The length of the buffer pointed to by `path`.
+     */
+    size_t path_len
+) {
+   return __syscall_unlinkat(fd, (intptr_t)path, AT_REMOVEDIR);
+}
 
 // path_rename
 // Rename a file or directory.
@@ -603,14 +618,25 @@ __wasi_errno_t __wasi_path_readlink(
 // The path_rename() function renames a file or directory specified by the given path. It requires the PATH_RENAME_SOURCE right on the source directory and the PATH_RENAME_TARGET right on the target directory.
 // On POSIX systems, a similar functionality is provided by the rename() function. It renames a file or directory with the specified source and target paths. The rename() function is part of the POSIX standard and is widely supported across different platforms.
 // Parameters
-// ctx: A mutable reference to the function environment.
 // old_fd: The file descriptor representing the base directory for the source path.
 // old_path: A wasm pointer to a null-terminated string containing the source path of the file or directory to be renamed.
 // old_path_len: The length of the old_path string.
 // new_fd: The file descriptor representing the base directory for the target path.
 // new_path: A wasm pointer to a null-terminated string containing the target path with the new name for the file or directory.
 // new_path_len: The length of the new_path string.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_rename(
+    __wasi_fd_t old_fd,
+    const char *old_path,
+    size_t old_path_len,
+    __wasi_fd_t new_fd,
+    const char *new_path,
+    size_t new_path_len) {
+   return __syscall_renameat(old_fd,
+                       (intptr_t)old_path,
+                       (int)new_fd,
+                       (intptr_t)new_path);
+}
 
 // path_symlink
 // Create a symlink.
@@ -623,7 +649,15 @@ __wasi_errno_t __wasi_path_readlink(
 // fd: The file descriptor representing the base directory from which the paths are understood.
 // new_path: A wasm pointer to a null-terminated string containing the target path where the symlink will be created.
 // new_path_len: The length of the new_path string.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_symlink(
+    const char *old_path,
+   size_t old_path_len,
+    __wasi_fd_t fd,
+    const char *new_path,
+    size_t new_path_len) {
+      return __syscall_symlinkat((intptr_t)new_path, fd, (intptr_t)old_path);
+}
 
 // path_unlink_file
 // Unlink a file, deleting it if the number of hardlinks is 1.
@@ -631,8 +665,16 @@ __wasi_errno_t __wasi_path_readlink(
 // The path_unlink_file() function unlinks a file at the specified path. If the file has only one hardlink (i.e., its link count is 1), it will be deleted from the file system. It requires the PATH_UNLINK_FILE right on the base file descriptor.
 // On POSIX systems, a similar functionality is provided by the unlink() function. It removes the specified file from the file system. If the file has no other hardlinks, it is completely deleted. The unlink() function is part of the POSIX standard and is widely supported across different platforms.
 // Parameters
-// ctx: A mutable reference to the function environment.
-// fd: The file descriptor representing the base directory from which the path is understood.
+// dirfd: The file descriptor representing the base directory from which the path is understood.
 // path: A wasm pointer to a null-terminated string containing the path of the file to be unlinked.
 // path_len: The length of the path string.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t path_unlink_file(
+    __wasi_fd_t dirfd,
+    const char *path,
+    size_t path_len
+) {
+   // 0 flags for file
+   return __syscall_unlinkat((int)dirfd, (intptr_t)path, 0);
+}
 }
