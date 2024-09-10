@@ -1,9 +1,32 @@
 // need to do this:https://github.com/emscripten-core/emscripten/issues/22249#issuecomment-2240873930
-#define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
 
 #include <emscripten.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <cstdint>
+#include <cstddef>
+
+#include <dirent.h>
+#include <emscripten/emscripten.h>
+#include <emscripten/heap.h>
+#include <emscripten/html5.h>
+#include <errno.h>
+#include <mutex>
+#include <poll.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/statfs.h>
+#include <syscall_arch.h>
+#include <unistd.h>
+#include <utility>
+#include <vector>
+#include <wasi/api.h>
+
+#define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
 
 // just modify cache/sysroot/include/wasi/api.h functions you don't want to have imports to be dummy things instead
 // actually stub out
@@ -14,16 +37,30 @@
 // normally never include cpp but we gotta do this so symbols aren't multiply defined
 // from hack that removes fd_write
 //#include "wasmfs/emscripten.cpp"
+#include <unistd.h> // getentropy
+#include <fcntl.h>
+#include <assert.h>
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#include <map>
+#include <sys/stat.h>
 
-#include "wasmfs/file_table.cpp"
+#include <boost/unordered_map.hpp>
+
 #include "wasmfs/file.cpp"
-#include "wasmfs/paths.cpp"
 #include "wasmfs/special_files.cpp"
+#include "wasmfs/file_table.cpp"
+
+
+#include "wasmfs/backends/memory_backend.cpp"
+
+
+#include "wasmfs/paths.cpp"
 //#include "wasmfs/support.cpp"
 //#include "wasmfs/syscalls.cpp"
 #include "wasmfs/wasmfs.cpp"
-#include "wasmfs/backends/memory_backend.cpp"
-
+// this lets us remove imports for reasons I don't understand
+#include <boost/unordered_map.hpp>
 
 
 extern "C" {

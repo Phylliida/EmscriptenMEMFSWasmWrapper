@@ -249,6 +249,20 @@ static __wasi_errno_t readAtOffset(OffsetHandling setOffset,
   return __WASI_ERRNO_SUCCESS;
 }
 
+__wasi_errno_t __wasi_fd_write(__wasi_fd_t fd,
+                               const __wasi_ciovec_t* iovs,
+                               size_t iovs_len,
+                               __wasi_size_t* nwritten) {
+  return writeAtOffset(
+    OffsetHandling::OpenFileState, fd, iovs, iovs_len, nwritten);
+}
+
+__wasi_errno_t __wasi_fd_read(__wasi_fd_t fd,
+                              const __wasi_iovec_t* iovs,
+                              size_t iovs_len,
+                              __wasi_size_t* nread) {
+  return readAtOffset(OffsetHandling::OpenFileState, fd, iovs, iovs_len, nread);
+}
 
 __wasi_errno_t __wasi_fd_pwrite(__wasi_fd_t fd,
                                 const __wasi_ciovec_t* iovs,

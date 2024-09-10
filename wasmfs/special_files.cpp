@@ -170,32 +170,32 @@ public:
 } // anonymous namespace
 
 std::shared_ptr<DataFile> getNull() {
-  static auto null = std::make_shared<NullFile>();
+  static std::shared_ptr<NullFile> null;
   return null;
 }
 
 std::shared_ptr<DataFile> getStdin() {
-  static auto stdin = std::make_shared<StdinFile>();
+  static std::shared_ptr<StdinFile> stdin;
   return stdin;
 }
 
 std::shared_ptr<DataFile> getStdout() {
-  static auto stdout = std::make_shared<StdoutFile>();
+  static std::shared_ptr<StdoutFile> stdout;
   return stdout;
 }
 
 std::shared_ptr<DataFile> getStderr() {
-  static auto stderr = std::make_shared<StderrFile>();
+  static std::shared_ptr<StderrFile> stderr;
   return stderr;
 }
 
 std::shared_ptr<DataFile> getRandom() {
-  static auto random = std::make_shared<RandomFile>();
+  static std::shared_ptr<RandomFile> random;
   return random;
 }
 
 std::shared_ptr<DataFile> getURandom() {
-  static auto urandom = std::make_shared<RandomFile>();
+  static std::shared_ptr<RandomFile> urandom;
   return urandom;
 }
 
