@@ -4,11 +4,12 @@
 EMCC = ./emscripten/emcc
 
 # Source file
-SRC = ayy.cpp 
+SRC = memfs.cpp
 # Output file
 OUT = memfs.wasm
 
 # Emscripten flags
+# need WASMFS=0 because we had to modify some of the files
 EMFLAGS = -s WASM=1 \
           -s WASMFS=0 \
           -s SIDE_MODULE=0 \

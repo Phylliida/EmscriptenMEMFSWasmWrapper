@@ -1,115 +1,54 @@
-// need to do this:https://github.com/emscripten-core/emscripten/issues/22249#issuecomment-2240873930
+#define NDEBUG // needed to prevent support from using logging
+#define NO_EMSCRIPTEN_ERROR // flag added to stop errors in wasmfs
 
-#include <emscripten.h>
-#include <stdio.h>
-#include <string.h>
+#include <syscalls.cpp>
+#include <file_table.cpp>
+#include <file.cpp>
+#include <paths.cpp>
+#include "backends/memory_backend.cpp"
+#include <support.cpp>
 
-#include <cstdint>
-#include <cstddef>
+#include <wasmfs.cpp> // only change is wrapping stuff in ifndef NO_EMSCRIPTEN_ERROR to prevent errors from importing fd_write (stub does not prevent this)
 
-#include <dirent.h>
-#include <emscripten/emscripten.h>
-#include <emscripten/heap.h>
-#include <emscripten/html5.h>
-#include <errno.h>
-#include <mutex>
-#include <poll.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/statfs.h>
-#include <syscall_arch.h>
-#include <unistd.h>
-#include <utility>
-#include <vector>
-#include <wasi/api.h>
-
-#define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
-
-// just modify cache/sysroot/include/wasi/api.h functions you don't want to have imports to be dummy things instead
-// actually stub out
-// ../../../system/lib/wasmfs/syscalls.cpp
-// and we will define it here (after doing that, delete cache)
-
-//#include "js_api.h"
-// normally never include cpp but we gotta do this so symbols aren't multiply defined
-// from hack that removes fd_write
-//#include "wasmfs/emscripten.cpp"
-#include <unistd.h> // getentropy
-#include <fcntl.h>
-#include <assert.h>
-#include <emscripten.h>
-#include <emscripten/html5.h>
-#include <map>
-#include <sys/stat.h>
-
-#include <boost/unordered_map.hpp>
-
-#include "wasmfs/file.cpp"
-#include "wasmfs/special_files.cpp"
-#include "wasmfs/file_table.cpp"
-
-
-#include "wasmfs/backends/memory_backend.cpp"
-
-
-#include "wasmfs/paths.cpp"
-//#include "wasmfs/support.cpp"
-//#include "wasmfs/syscalls.cpp"
-#include "wasmfs/wasmfs.cpp"
-// this lets us remove imports for reasons I don't understand
-#include <boost/unordered_map.hpp>
-
+// Imports required:
+// read_stdin, write_stdout, write_stderr
+//    these do what you'd expect, stdin/stdout/stderr are typically part of a file system
+// emscripten_notify_memory_growth
+//    some builtin one from emscripten idk how to get rid of, just make an empty stub
+// clock_time_get
+//    needed to put time data (last modified, etc.) on the in memory files
 
 extern "C" {
 
-/*
-EMSCRIPTEN_KEEPALIVE
-void bees() {
-   FILE* file = fopen("bees", "w");
-   const char* text = "hello";
-   fwrite(text, sizeof(char), strlen(text), file);
-   fclose(file);
-}
-*/
+// when the file system wants to read from stdin
+// should return the number of bytes read (which should be len)
+ssize_t read_stdin(uint8_t* buf, size_t len, off_t offset) __attribute__((
+    __import_module__("fs_wrapper"),
+    __import_name__("read_stdin"),
+    __warn_unused_result__
+));
 
-#define js_index_t uintptr_t
+// when the file system wants to write to stdout
+// should return the number of bytes written (which should be len)
+ssize_t write_stdout(const uint8_t* buf, size_t len, off_t offset) __attribute__((
+    __import_module__("fs_wrapper"),
+    __import_name__("write_stdout"),
+    __warn_unused_result__
+));
 
-// stub out jsimpl since we are not using that, this prevents these imports
-void _wasmfs_jsimpl_alloc_file(js_index_t backend, js_index_t index)
-{
-}
-void _wasmfs_jsimpl_free_file(js_index_t backend, js_index_t index)
-{
+// when the file system wants to write to stderr
+// should return the number of bytes written (which should be len)
+ssize_t write_stderr(const uint8_t* buf, size_t len, off_t offset) __attribute__((
+    __import_module__("fs_wrapper"),
+    __import_name__("write_stderr"),
+    __warn_unused_result__
+));
 
-}
-__wasi_errno_t _wasmfs_jsimpl_write(js_index_t backend,
-                         js_index_t index,
-                         const uint8_t* buffer,
-                         size_t length,
-                         off_t offset)
-{
-   return 0;
-}
-__wasi_errno_t _wasmfs_jsimpl_read(js_index_t backend,
-                        js_index_t index,
-                        const uint8_t* buffer,
-                        size_t length,
-                        off_t offset)
-{
-   return 0;
-}
-__wasi_errno_t _wasmfs_jsimpl_get_size(js_index_t backend, js_index_t index)
-{
-   return 0;
-}
-__wasi_errno_t _wasmfs_jsimpl_set_size(js_index_t backend, js_index_t index, off_t size)
-{
-   return 0;
 }
 
+#include <special_files.cpp>
+
+extern "C" {
 // Documentation from https://wasix.org/docs/api-reference/
 
 // fd_advise
@@ -129,7 +68,7 @@ __wasi_errno_t fd_advise(
     __wasi_filesize_t len,
     __wasi_advice_t advice
 ) {
-   //__syscall_fadvise64((int)fd, (off_t)offset, (off_t)len, (int)advice);
+   __syscall_fadvise64((int)fd, (off_t)offset, (off_t)len, (int)advice);
 }
 
 // fd_allocate
@@ -142,7 +81,7 @@ __wasi_errno_t fd_advise(
 // len: The length from the offset marking the end of the allocation.
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_allocate(__wasi_fd_t fd, off_t offset, off_t len) {
-  //return __syscall_fallocate(fd, 0, offset, len);
+  return __syscall_fallocate(fd, 0, offset, len);
 }
 
 // fd_close
@@ -152,9 +91,8 @@ __wasi_errno_t fd_allocate(__wasi_fd_t fd, off_t offset, off_t len) {
 // Parameters
 // fd: The file descriptor mapping to an open file to close.
 EMSCRIPTEN_KEEPALIVE
-__wasi_errno_t fd_close(__wasi_fd_t fd) {
-   // Don't bother with this, they are in memory
-   return 0;
+__wasi_errno_t fd_close(__wasi_fd_t fd) {   
+   return __wasi_fd_close(fd);
 }
 
 // fd_datasync
@@ -165,7 +103,7 @@ __wasi_errno_t fd_close(__wasi_fd_t fd) {
 // fd: The file descriptor to synchronize.
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_datasync(__wasi_fd_t fd) {
-   //return __syscall_fdatasync(fd);
+   return __wasi_fd_sync(fd);
 }
 
 // fd_fdstat_get
@@ -178,7 +116,7 @@ __wasi_errno_t fd_datasync(__wasi_fd_t fd) {
 // buf_ptr: A WebAssembly pointer to a memory location where the metadata will be written.
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
-   //return __wasi_fd_fdstat_get(fd, stat);
+   return __wasi_fd_fdstat_get(fd, stat);
 }
 
 // fd_fdstat_set_flags
@@ -188,6 +126,12 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 // Parameters
 // fd: The file descriptor to apply the new flags to.
 // flags: The flags to apply to the file descriptor.
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_fdstat_set_flags(__wasi_fd_t fd, std::uint16_t flags) {
+   // stub for now, ignored
+   return 0;
+}
+
 
 // fd_fdstat_set_rights
 // Set the rights of a file descriptor. This can only be used to remove rights.
@@ -198,7 +142,11 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 // fd: The file descriptor to apply the new rights to.
 // fs_rights_base: The base rights to apply to the file descriptor.
 // fs_rights_inheriting: The inheriting rights to apply to the file descriptor.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_fdstat_set_rights(__wasi_fd_t fd, std::uint64_t fs_rights_base, std::uint64_t fs_rights_inheriting) {
+   // stub for now, ignored
+   return 0;
+}
 
 // fd_filestat_get
 // Get the metadata of an open file.
@@ -208,7 +156,10 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 // Parameters
 // fd: The file descriptor of the open file whose metadata will be read.
 // buf: A WebAssembly pointer to a memory location where the metadata will be written.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_filestat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
+   return __wasi_fd_fdstat_get(fd, stat);
+}
 
 // fd_filestat_set_size
 // Change the size of an open file, zeroing out any new bytes.
@@ -218,7 +169,10 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 // Parameters
 // fd: The file descriptor of the open file to adjust.
 // st_size: The new size to set for the file.
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_filestat_set_size(int fd, off_t size) {
+   return (__wasi_errno_t)__syscall_ftruncate64(fd, size);
+}
 
 // fd_filestat_set_times
 // Set timestamp metadata on a file.
@@ -290,8 +244,13 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 // iovs: A pointer to an array of __wasi_iovec_t structures describing the buffers where the data will be stored.
 // iovs_len: The number of vectors (__wasi_iovec_t) in the iovs array.
 // nread: A pointer to store the number of bytes read.
-
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_read(__wasi_fd_t fd,
+                              const __wasi_iovec_t* iovs,
+                              size_t iovs_len,
+                              __wasi_size_t* nread) {
+  return readAtOffset(OffsetHandling::OpenFileState, fd, iovs, iovs_len, nread);
+}
 // fd_readdir
 // Read data from a directory specified by the file descriptor.
 // Description
@@ -350,8 +309,14 @@ __wasi_errno_t fd_fdstat_get(__wasi_fd_t fd, __wasi_fdstat_t* stat) {
 // iovs: A wasm pointer to an array of __wasi_ciovec_t structures, each describing a buffer to write data from.
 // iovs_len: The length of the iovs array.
 // nwritten: A wasm pointer to an M::Offset value where the number of bytes written will be written.
-
-
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_write(__wasi_fd_t fd,
+                               const __wasi_ciovec_t* iovs,
+                               size_t iovs_len,
+                               __wasi_size_t* nwritten) {
+  return writeAtOffset(
+    OffsetHandling::OpenFileState, fd, iovs, iovs_len, nwritten);
+}
 
 // path_create_directory
 // Create a directory at a path.
