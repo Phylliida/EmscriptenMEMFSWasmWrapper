@@ -170,7 +170,7 @@ public:
 } // anonymous namespace
 
 std::shared_ptr<DataFile> getNull() {
-  static std::shared_ptr<NullFile> null;
+  static std::shared_ptr<NullFile> null(new NullFile());
   return null;
 }
 

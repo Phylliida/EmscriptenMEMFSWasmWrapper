@@ -11,6 +11,7 @@
 #include "wasmfs_internal.h"
 #include <emscripten/threading.h>
 
+
 namespace wasmfs {
 
 //
