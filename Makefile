@@ -4,7 +4,7 @@
 EMCC = ./emscripten/emcc
 
 # Source file
-SRC = memfs_init.cpp 
+SRC = ayy.cpp 
 # Output file
 OUT = memfs.wasm
 
