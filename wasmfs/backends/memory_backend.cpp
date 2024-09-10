@@ -109,12 +109,13 @@ public:
 };
 
 backend_t createMemoryBackend() {
-  return wasmFS.addBackend(std::make_unique<MemoryBackend>());
+  //return wasmFS.addBackend(std::make_unique<MemoryBackend>());
 }
 
 extern "C" {
 
-backend_t wasmfs_create_memory_backend() { return createMemoryBackend(); }
+backend_t wasmfs_create_memory_backend() { 
+  return createMemoryBackend(); }
 
 } // extern "C"
 

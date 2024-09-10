@@ -19,9 +19,9 @@
 #include "wasmfs/file.cpp"
 #include "wasmfs/paths.cpp"
 #include "wasmfs/special_files.cpp"
-#include "wasmfs/support.cpp"
-#include "wasmfs/syscalls.cpp"
-//#include "wasmfs/wasmfs.cpp"
+//#include "wasmfs/support.cpp"
+//#include "wasmfs/syscalls.cpp"
+#include "wasmfs/wasmfs.cpp"
 #include "wasmfs/backends/memory_backend.cpp"
 
 

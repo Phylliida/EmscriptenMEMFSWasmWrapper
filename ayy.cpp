@@ -130,14 +130,14 @@ public:
 
     boost::shared_ptr<T> shared_from_this()
     {
-        boost::shared_ptr<T> p( weak_this_);
+        boost::shared_ptr<T> p( weak_this_, NO_THROW_TAG);
         //BOOST_ASSERT( p.get() == this );
         return p;
     }
 
     boost::shared_ptr<T const> shared_from_this() const
     {
-        boost::shared_ptr<T const> p( weak_this_);
+        boost::shared_ptr<T const> p( weak_this_, NO_THROW_TAG );
         //BOOST_ASSERT( p.get() == this );
         return p;
     }
@@ -845,7 +845,6 @@ protected:
 
   boost::shared_ptr<Directory> insertDirectory(const std::string& name,
                                              mode_t mode) override {
-    return nullptr;
     auto child = getBackend()->createDirectory(mode);
     insertChild(name, child);
     return child;
@@ -1051,7 +1050,7 @@ namespace wasmfs {
 
 class WasmFS {
 
-  std::vector<std::unique_ptr<Backend>> backendTable;
+  std::vector<boost::shared_ptr<Backend>> backendTable;
   FileTable fileTable;
   boost::shared_ptr<Directory> rootDirectory;
   boost::shared_ptr<Directory> cwd;
@@ -1083,11 +1082,10 @@ public:
     cwd = directory;
   };
 
-  backend_t addBackend(std::unique_ptr<Backend> backend) {
-    //const std::lock_guard<std::mutex> lock(mutex);
-    //backendTable.push_back(std::move(backend));
-    //return backendTable.back().get();
-    //return ;
+  backend_t addBackend(boost::shared_ptr<Backend> backend) {
+    const std::lock_guard<std::mutex> lock(mutex);
+    backendTable.push_back(std::move(backend));
+    return backendTable.back().get();
   }
 };
 
@@ -2946,7 +2944,6 @@ boost::shared_ptr<OpenFileState> FileTable::Handle::getEntry(__wasi_fd_t fd) {
   }
   return fileTable.entries[fd];
   
- return nullptr;
 }
 
 boost::shared_ptr<DataFile>
@@ -3026,11 +3023,11 @@ namespace wasmfs {
 // Otherwise, we use the default backends.
 backend_t wasmfs_create_root_dir(void) {
 
-//#ifdef WASMFS_CASE_INSENSITIVE
-//  return createIgnoreCaseBackend([]() { return createMemoryBackend(); });
-//#else
+#ifdef WASMFS_CASE_INSENSITIVE
+  return createIgnoreCaseBackend([]() { return createMemoryBackend(); });
+#else
   return createMemoryBackend();
-//#endif
+#endif
 
 }
 
@@ -3048,9 +3045,9 @@ backend_t createIgnoreCaseBackend(std::function<backend_t()> createBacken);
 // system priority) since wasmFS is a system level component.
 // TODO: consider instead adding this in libc's startup code.
 // WARNING: Maintain # n + 1 "wasmfs.cpp" 3 where n = line number.
-# 29 "wasmfs.cpp" 3
+# 3049 "wasmfs.cpp" 3
 __attribute__((init_priority(100))) WasmFS wasmFS;
-# 31 "wasmfs.cpp"
+# 3051 "wasmfs.cpp"
 
 // If the user does not implement this hook, do nothing.
 __attribute__((weak)) extern "C" void wasmfs_before_preload(void) {}
@@ -3060,10 +3057,10 @@ __attribute__((weak)) extern "C" void wasmfs_before_preload(void) {}
 WasmFS::WasmFS()  {
   
   rootDirectory = initRootDirectory();
-  //cwd = rootDirectory;
-  //auto rootBackend = wasmfs_create_root_dir();
-  //wasmfs_before_preload();
-  //preloadFiles();
+  cwd = rootDirectory;
+  auto rootBackend = wasmfs_create_root_dir();
+  wasmfs_before_preload();
+  preloadFiles();
   
 }
 
@@ -3102,17 +3099,17 @@ WasmFS::~WasmFS() {
   // time that leak checks are run be done here, or potentially earlier, but not
   // later; and as mentioned in the comment above, this is the latest possible
   // time for the checks to run (since right after this nothing can be `ed).
-  //__lsan_do_leak_check();
+  __lsan_do_leak_check();
 
   // TODO: Integrate musl exit() which would flush the libc part for us. That
   //       might also help with destructor priority - we need to happen last.
   //       (But we would still need to flush the internal WasmFS buffers, see
   //       wasmfs_flush() and the comment on it in the header.)
-  //wasmfs_flush();
+  wasmfs_flush();
 
   // Break the reference cycle caused by the root directory being its own
   // parent.
-  rootDirectory->locked();//.setParent(nullptr);
+  rootDirectory->locked().setParent(nullptr);
 }
 
 
@@ -3155,38 +3152,37 @@ boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
 // operation to ensure any preloaded files are eagerly available for use.
 
 void WasmFS::preloadFiles() {
-    return;
   // Debug builds only: add check to ensure preloadFiles() is called once.
 #ifndef NDEBUG
   static std::atomic<int> timesCalled;
   timesCalled++;
-  assert(timesCalled == 1);
+//  assert(timesCalled == 1);
 #endif
-
+ 
   // Ensure that files are preloaded from the main thread.
   assert(emscripten_is_main_runtime_thread());
 
-  auto numFiles = _wasmfs_get_num_preloaded_files();
-  auto numDirs = _wasmfs_get_num_preloaded_dirs();
-
+  auto numFiles = 4; //_wasmfs_get_num_preloaded_files();
+  auto numDirs = 3;// _wasmfs_get_num_preloaded_dirs();
+ 
   // If there are no preloaded files, exit early.
   if (numDirs == 0 && numFiles == 0) {
     return;
   }
-
+ 
   // Iterate through wasmFS$preloadedDirs to obtain a parent and child pair.
   // Ex. Module['FS_createPath']("/foo/parent", "child", true, true);
   for (int i = 0; i < numDirs; i++) {
     char parentPath[PATH_MAX] = {};
     _wasmfs_get_preloaded_parent_path(i, parentPath);
-
+ 
     auto parsed = path::parseFile(parentPath);
     boost::shared_ptr<Directory> parentDir;
     if (parsed.getError() ||
         !(parentDir = parsed.getFile()->dynCast<Directory>())) {
-      emscripten_err(
-        "Fatal error during directory creation in file preloading.");
-      abort();
+      //emscripten_err(
+      //  "Fatal error during directory creation in file preloading.");
+      //abort();
     }
 
     char childName[PATH_MAX] = {};
@@ -3201,8 +3197,8 @@ void WasmFS::preloadFiles() {
     auto inserted =
       lockedParentDir.insertDirectory(childName, S_IRUGO | S_IXUGO);
     assert(inserted && "TODO: handle preload insertion errors");
+    
   }
-
   for (int i = 0; i < numFiles; i++) {
     char fileName[PATH_MAX] = {};
     _wasmfs_get_preloaded_path_name(i, fileName);
@@ -3210,16 +3206,19 @@ void WasmFS::preloadFiles() {
     auto mode = _wasmfs_get_preloaded_file_mode(i);
 
     auto parsed = path::parseParent(fileName);
+    
     if (parsed.getError()) {
-      emscripten_err("Fatal error during file preloading");
-      abort();
+      //emscripten_err("Fatal error during file preloading");
+      //abort();
     }
-    auto& [parent, childName] = parsed.getParentChild();
+    
+        auto& [parent, childName] = parsed.getParentChild();
     auto created =
       parent->locked().insertDataFile(std::string(childName), (mode_t)mode);
     assert(created && "TODO: handle preload insertion errors");
     created->locked().preloadFromJS(i);
-    
+   
+  
   }
 }
 
@@ -3341,7 +3340,7 @@ class StdoutFile : public WritingStdFile {
     // This is confirmed to occur when running with EXIT_RUNTIME and
     // PROXY_TO_PTHREAD. This results in only a single console.log statement
     // being outputted. The solution for now is to use out() and err() instead.
-    //return writeToJS(buf, len, &emscripten_out, writeBuffer);
+    return writeToJS(buf, len, &emscripten_out, writeBuffer);
   }
 
 public:
@@ -3355,7 +3354,7 @@ class StderrFile : public WritingStdFile {
     //       emscripten_err does.
     //       This will not show in HTML - a console.warn in a worker is
     //       sufficient. This would be a change from the current FS.
-    //return writeToJS(buf, len, &emscripten_err, writeBuffer);
+    return writeToJS(buf, len, &emscripten_err, writeBuffer);
   }
 
 public:
@@ -3537,7 +3536,6 @@ Directory::Handle::insertDirectory(const std::string& name, mode_t mode) {
     return nullptr;
   }
   cacheChild(name, child, DCacheKind::Normal);
-  return nullptr;
   updateMTime();
   return child;
 }
@@ -3943,23 +3941,18 @@ std::string MemoryDirectory::getName(boost::shared_ptr<File> file) {
 class MemoryBackend : public Backend {
 public:
   boost::shared_ptr<DataFile> createFile(mode_t mode) override {
-    return nullptr;
-    //return boost::shared_ptr<MemoryDataFile>(new MemoryDataFile(mode, this));
+    return boost::shared_ptr<MemoryDataFile>(new MemoryDataFile(mode, this));
   }
   boost::shared_ptr<Directory> createDirectory(mode_t mode) override {
-    return nullptr;
-    //return boost::shared_ptr<MemoryDirectory>(new MemoryDirectory(mode, this));
+    return boost::shared_ptr<MemoryDirectory>(new MemoryDirectory(mode, this));
   }
   boost::shared_ptr<Symlink> createSymlink(std::string target) override {
-    return nullptr;
-    //return boost::shared_ptr<MemorySymlink>(new MemorySymlink(target, this));
+    return boost::shared_ptr<MemorySymlink>(new MemorySymlink(target, this));
   }
 };
 
 backend_t createMemoryBackend() {
-  auto bees =  (new MemoryBackend());
-  //return wasmFS.addBackend();
-  return nullptr;
+    return wasmFS.addBackend(boost::make_shared<MemoryBackend>());
 }
 
 extern "C" {

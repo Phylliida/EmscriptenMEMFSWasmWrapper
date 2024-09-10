@@ -30,9 +30,9 @@ backend_t createIgnoreCaseBackend(std::function<backend_t()> createBacken);
 // system priority) since wasmFS is a system level component.
 // TODO: consider instead adding this in libc's startup code.
 // WARNING: Maintain # n + 1 "wasmfs.cpp" 3 where n = line number.
-# 29 "wasmfs.cpp" 3
+# 32 "wasmfs.cpp" 3
 __attribute__((init_priority(100))) WasmFS wasmFS;
-# 31 "wasmfs.cpp"
+# 34 "wasmfs.cpp"
 
 // If the user does not implement this hook, do nothing.
 __attribute__((weak)) extern "C" void wasmfs_before_preload(void) {}
@@ -160,9 +160,9 @@ void WasmFS::preloadFiles() {
     std::shared_ptr<Directory> parentDir;
     if (parsed.getError() ||
         !(parentDir = parsed.getFile()->dynCast<Directory>())) {
-      emscripten_err(
-        "Fatal error during directory creation in file preloading.");
-      abort();
+      //emscripten_err(
+      //  "Fatal error during directory creation in file preloading.");
+      //abort();
     }
 
     char childName[PATH_MAX] = {};
@@ -187,8 +187,8 @@ void WasmFS::preloadFiles() {
 
     auto parsed = path::parseParent(fileName);
     if (parsed.getError()) {
-      emscripten_err("Fatal error during file preloading");
-      abort();
+      //emscripten_err("Fatal error during file preloading");
+      //abort();
     }
     auto& [parent, childName] = parsed.getParentChild();
     auto created =
