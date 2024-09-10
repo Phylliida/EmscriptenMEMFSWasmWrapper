@@ -46,8 +46,10 @@ class StdinFile : public DataFile {
   }
 
   ssize_t read(uint8_t* buf, size_t len, off_t offset) override {
+    return read_stdin(buf, len, offset);
+    /*
     for (size_t i = 0; i < len; i++) {
-      auto c = _wasmfs_stdin_get_char();
+      auto c = read_stdin_char();
       if (c < 0) {
         // No more input can be read, return what we did read.
         return i;
@@ -55,6 +57,7 @@ class StdinFile : public DataFile {
       buf[i] = c;
     }
     return len;
+    */
   };
 
   int flush() override { return 0; }
@@ -89,6 +92,7 @@ protected:
   off_t getSize() override { return 0; }
   int setSize(off_t size) override { return -EPERM; }
 
+  /*
   ssize_t writeToJS(const uint8_t* buf,
                     size_t len,
                     void (*console_write)(const char*),
@@ -106,6 +110,7 @@ protected:
     }
     return len;
   }
+  */
 
 public:
   WritingStdFile() : DataFile(S_IWUGO, NullBackend, S_IFCHR) {
@@ -121,7 +126,8 @@ class StdoutFile : public WritingStdFile {
     // This is confirmed to occur when running with EXIT_RUNTIME and
     // PROXY_TO_PTHREAD. This results in only a single console.log statement
     // being outputted. The solution for now is to use out() and err() instead.
-    return writeToJS(buf, len, &emscripten_out, writeBuffer);
+    return write_stdout(buf, len, offset);
+    //return writeToJS(buf, len, &emscripten_out, writeBuffer);
   }
 
 public:
@@ -135,7 +141,8 @@ class StderrFile : public WritingStdFile {
     //       emscripten_err does.
     //       This will not show in HTML - a console.warn in a worker is
     //       sufficient. This would be a change from the current FS.
-    return writeToJS(buf, len, &emscripten_err, writeBuffer);
+    return write_stderr(buf, len, offset);
+    //return writeToJS(buf, len, &emscripten_out, writeBuffer);
   }
 
 public:
@@ -170,32 +177,32 @@ public:
 } // anonymous namespace
 
 std::shared_ptr<DataFile> getNull() {
-  static std::shared_ptr<NullFile> null(new NullFile());
+  static auto null = std::make_shared<NullFile>();
   return null;
 }
 
 std::shared_ptr<DataFile> getStdin() {
-  static std::shared_ptr<StdinFile> stdin;
+  static auto stdin = std::make_shared<StdinFile>();
   return stdin;
 }
 
 std::shared_ptr<DataFile> getStdout() {
-  static std::shared_ptr<StdoutFile> stdout;
+  static auto stdout = std::make_shared<StdoutFile>();
   return stdout;
 }
 
 std::shared_ptr<DataFile> getStderr() {
-  static std::shared_ptr<StderrFile> stderr;
+  static auto stderr = std::make_shared<StderrFile>();
   return stderr;
 }
 
 std::shared_ptr<DataFile> getRandom() {
-  static std::shared_ptr<RandomFile> random;
+  static auto random = std::make_shared<RandomFile>();
   return random;
 }
 
 std::shared_ptr<DataFile> getURandom() {
-  static std::shared_ptr<RandomFile> urandom;
+  static auto urandom = std::make_shared<RandomFile>();
   return urandom;
 }
 
