@@ -5,6 +5,7 @@
 // syscalls.cpp will implement the syscalls of the new file system replacing the
 // old JS version. Current Status: Work in Progress. See
 // https://github.com/emscripten-core/emscripten/issues/15041.
+#define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
 
 #include <cstdint>
 #include <cstddef>
@@ -28,14 +29,51 @@
 #include <vector>
 #include <wasi/api.h>
 
+#include <unistd.h> // getentropy
+#include <fcntl.h>
+#include <assert.h>
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#include <map>
+#include <sys/stat.h>
+
+#include <support.h>
+#include <file.h>
+#include <paths.h>
+#include <special_files.h>
+#include <backend.h>
+#include <memory_backend.h>
+#include <wasmfs_internal.h>
+#include <file_table.h>
+#include <syscalls.cpp>
+
+extern "C" {
+  
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_write(__wasi_fd_t fd,
+                               const __wasi_ciovec_t* iovs,
+                               size_t iovs_len,
+                               __wasi_size_t* nwritten) {
+  return writeAtOffset(
+    OffsetHandling::OpenFileState, fd, iovs, iovs_len, nwritten);
+}
+
+EMSCRIPTEN_KEEPALIVE
+__wasi_errno_t fd_read(__wasi_fd_t fd,
+                              const __wasi_iovec_t* iovs,
+                              size_t iovs_len,
+                              __wasi_size_t* nread) {
+  return readAtOffset(OffsetHandling::OpenFileState, fd, iovs, iovs_len, nread);
+}
+}
 
 
-#define _LARGEFILE64_SOURCE // For F_GETLK64 etc
-#define NDEBUG // prevents boost assert from throwing exceptions and resulting in imports
-#define BOOST_DISABLE_ASSERTS
+//#define _LARGEFILE64_SOURCE // For F_GETLK64 etc
+//#define BOOST_DISABLE_ASSERTS
 
-#include <exception>
+//#include <exception>
 
+/*
 // remove boost exceptions completely
 #define BOOST_NO_EXCEPTIONS
 #define BOOST_EXCEPTION_DISABLE 
@@ -45,50 +83,41 @@ namespace boost {
     void throw_exception( std::exception const & e ) {
 
     }
-    //void throw_exception( std::exception const & e, boost::source_location const & loc ) {
+    //void throw_exception( std::exception const & e, std::source_location const & loc ) {
 
     //}
 }
-
+*/
 
 
 // Copyright 2022 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
 // found in the LICENSE file.
-#include <unistd.h> // getentropy
-#include <fcntl.h>
-#include <assert.h>
-#include <emscripten.h>
-#include <emscripten/html5.h>
-#include <map>
-#include <sys/stat.h>
 
-#include <boost/unordered_map.hpp>
-
-#include <boost/smart_ptr/weak_ptr.hpp>
-#include <boost/smart_ptr/make_shared.hpp>
-#include <boost/smart_ptr/shared_ptr.hpp>
-#include <boost/assert.hpp>
-#include <boost/config.hpp>
-
+//#include <boost/smart_ptr/weak_ptr.hpp>
+//#include <boost/smart_ptr/make_shared.hpp>
+//#include <boost/smart_ptr/shared_ptr.hpp>
+//#include <boost/assert.hpp>
+//#include <boost/config.hpp>
+/*
 extern "C" {
 EMSCRIPTEN_KEEPALIVE
 int fd_write(
     int fd,
-    /**
+    / **
      * List of scatter/gather vectors from which to retrieve data.
-     */
+     * /
     int iovs,
 
-    /**
+    / **
      * The length of the array pointed to by `iovs`.
-     */
+     * /
     int iovs_len,
 
-    /**
+    / **
      * The number of bytes written.
-     */
+     * /
      int nwritten
 )
  {
@@ -96,15 +125,16 @@ int fd_write(
 
  }
 }
+*/
 
 // stuff done:
 // use this custom enable_shared_from_this_no_throw to prevent exception when shared_ptr created
 // -fno-exceptions prevents std::map insert from throwing exceptions
 // std::make_shared can throw an exception, just allocate them with constructor instead
-
+/*
 namespace boost
 {
-const boost::detail::sp_nothrow_tag NO_THROW_TAG;
+const std::detail::sp_nothrow_tag NO_THROW_TAG;
 template<class T> class enable_shared_from_this_no_throw
 {
 protected:
@@ -128,16 +158,16 @@ protected:
 
 public:
 
-    boost::shared_ptr<T> shared_from_this()
+    std::shared_ptr<T> shared_from_this()
     {
-        boost::shared_ptr<T> p( weak_this_, NO_THROW_TAG);
+        std::shared_ptr<T> p( weak_this_, NO_THROW_TAG);
         //BOOST_ASSERT( p.get() == this );
         return p;
     }
 
-    boost::shared_ptr<T const> shared_from_this() const
+    std::shared_ptr<T const> shared_from_this() const
     {
-        boost::shared_ptr<T const> p( weak_this_, NO_THROW_TAG );
+        std::shared_ptr<T const> p( weak_this_, NO_THROW_TAG );
         //BOOST_ASSERT( p.get() == this );
         return p;
     }
@@ -145,7 +175,7 @@ public:
 public: // actually private, but avoids compiler template friendship issues
 
     // Note: invoked automatically by shared_ptr; do not call
-    template<class X, class Y> void _internal_accept_owner( boost::shared_ptr<X> const * ppx, Y * py ) const
+    template<class X, class Y> void _internal_accept_owner( std::shared_ptr<X> const * ppx, Y * py ) const
     {
         if( weak_this_.expired() )
         {
@@ -159,7 +189,7 @@ private:
 };
 
 }
-
+*/
 
 
 
@@ -171,9 +201,9 @@ private:
 
 
 //#include <emscripten/threading.h>
-int emscripten_is_main_runtime_thread() { return 1;};
+//int emscripten_is_main_runtime_thread() { return 1;};
 
-
+/*
 #ifndef NDEBUG
 // In debug builds show a message.
 namespace wasmfs {
@@ -186,8 +216,7 @@ handle_unreachable(const char* msg, const char* file, unsigned line);
 // In release builds trap in a compact manner.
 #define WASMFS_UNREACHABLE(msg) __builtin_trap()
 #endif
-
-
+*/
 
 // Copyright 2022 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
@@ -208,7 +237,7 @@ handle_unreachable(const char* msg, const char* file, unsigned line);
 // Current Status: Work in Progress.
 // See https://github.com/emscripten-core/emscripten/issues/15041.
 
-
+/*
 namespace wasmfs {
 
 // Note: The general locking strategy for all Files is to only hold 1 lock at a
@@ -233,7 +262,7 @@ using oflags_t = uint32_t;
 // not yet been discovered by WasmFS and that therefore do not yet have
 // corresponding `File` objects. Backends override the `File` family of classes
 // to implement the mapping from `File` objects to their underlying files.
-class File : public boost::enable_shared_from_this_no_throw<File> {
+class File : public std::enable_shared_from_this<File> {
 public:
   enum FileKind {
     UnknownKind = 0,
@@ -250,21 +279,21 @@ public:
     return int(kind) == int(T::expectedKind);
   }
 
-  template<class T> boost::shared_ptr<T> dynCast() {
+  template<class T> std::shared_ptr<T> dynCast() {
     static_assert(std::is_base_of<File, T>::value,
                   "File is not a base of destination type T");
     if (int(kind) == int(T::expectedKind)) {
-      return boost::static_pointer_cast<T>(shared_from_this());
+      return std::static_pointer_cast<T>(shared_from_this());
     } else {
       return nullptr;
     }
   }
 
-  template<class T> boost::shared_ptr<T> cast() {
+  template<class T> std::shared_ptr<T> cast() {
     //static_assert(std::is_base_of<File, T>::value,
     //              "File is not a base of destination type T");
     //assert(int(kind) == int(T::expectedKind));
-    return boost::static_pointer_cast<T>(shared_from_this());
+    return std::static_pointer_cast<T>(shared_from_this());
   }
 
   ino_t getIno() {
@@ -306,7 +335,7 @@ protected:
   // count is not incremented. This also ensures that there are no cyclic
   // dependencies where the parent and child have shared_ptrs that reference
   // each other. This prevents the case in which an uncollectable cycle occurs.
-  boost::weak_ptr<Directory> parent;
+  std::weak_ptr<Directory> parent;
 
   // This specifies which backend a file is associated with. It may be null
   // (NullBackend) if there is no particular backend associated with the file.
@@ -387,7 +416,7 @@ private:
   enum class DCacheKind { Normal, Mount };
   struct DCacheEntry {
     DCacheKind kind;
-    boost::shared_ptr<File> file;
+    std::shared_ptr<File> file;
   };
   // TODO: Use a cache data structure with smaller code size.
   std::map<std::string, DCacheEntry> dcache;
@@ -395,17 +424,17 @@ private:
 protected:
   // Return the `File` object corresponding to the file with the given name or
   // null if there is none.
-  virtual boost::shared_ptr<File> getChild(const std::string& name) = 0;
+  virtual std::shared_ptr<File> getChild(const std::string& name) = 0;
 
   // Inserts a file with the given name, kind, and mode. Returns a `File` object
   // corresponding to the newly created file or nullptr if the new file could
   // not be created. Assumes a child with this name does not already exist.
   // If the operation failed, returns nullptr.
-  virtual boost::shared_ptr<DataFile> insertDataFile(const std::string& name,
+  virtual std::shared_ptr<DataFile> insertDataFile(const std::string& name,
                                                    mode_t mode) = 0;
-  virtual boost::shared_ptr<Directory> insertDirectory(const std::string& name,
+  virtual std::shared_ptr<Directory> insertDirectory(const std::string& name,
                                                      mode_t mode) = 0;
-  virtual boost::shared_ptr<Symlink> insertSymlink(const std::string& name,
+  virtual std::shared_ptr<Symlink> insertSymlink(const std::string& name,
                                                  const std::string& target) = 0;
 
   // Move the file represented by `file` from its current directory to this
@@ -414,7 +443,7 @@ protected:
   // directory. On success return 0 and otherwise return a negative error code
   // without changing any underlying state.
   virtual int insertMove(const std::string& name,
-                         boost::shared_ptr<File> file) = 0;
+                         std::shared_ptr<File> file) = 0;
 
   // Remove the file with the given name. Returns zero on success or if the
   // child has already been removed and otherwise returns a negative error code
@@ -430,7 +459,7 @@ protected:
 
   // Only backends that maintain file identity themselves (see below) need to
   // implement this.
-  virtual std::string getName(boost::shared_ptr<File> file) {
+  virtual std::string getName(std::shared_ptr<File> file) {
     WASMFS_UNREACHABLE("getName unimplemented");
   }
 
@@ -490,11 +519,11 @@ protected:
   // 2 paths and access the same locked directory twice.
   // TODO: During benchmarking, test recursive vs normal mutex performance.
   std::unique_lock<std::recursive_mutex> lock;
-  boost::shared_ptr<File> file;
+  std::shared_ptr<File> file;
 
 public:
-  Handle(boost::shared_ptr<File> file) : lock(file->mutex), file(file) {}
-  Handle(boost::shared_ptr<File> file, std::defer_lock_t)
+  Handle(std::shared_ptr<File> file) : lock(file->mutex), file(file) {}
+  Handle(std::shared_ptr<File> file, std::defer_lock_t)
     : lock(file->mutex, std::defer_lock), file(file) {}
   off_t getSize() { return file->getSize(); }
   mode_t getMode() { return file->mode; }
@@ -530,17 +559,17 @@ public:
 
   // Note: parent.lock() creates a new shared_ptr to the same Directory
   // specified by the parent weak_ptr.
-  boost::shared_ptr<Directory> getParent() { return file->parent.lock(); }
-  void setParent(boost::shared_ptr<Directory> parent) { file->parent = parent; }
+  std::shared_ptr<Directory> getParent() { return file->parent.lock(); }
+  void setParent(std::shared_ptr<Directory> parent) { file->parent = parent; }
 
-  boost::shared_ptr<File> unlocked() { return file; }
+  std::shared_ptr<File> unlocked() { return file; }
 };
 
 class DataFile::Handle : public File::Handle {
-  boost::shared_ptr<DataFile> getFile() { return file->cast<DataFile>(); }
+  std::shared_ptr<DataFile> getFile() { return file->cast<DataFile>(); }
 
 public:
-  Handle(boost::shared_ptr<File> dataFile) : File::Handle(dataFile) {}
+  Handle(std::shared_ptr<File> dataFile) : File::Handle(dataFile) {}
   Handle(Handle&&) = default;
 
   [[nodiscard]] int open(oflags_t flags) { return getFile()->open(flags); }
@@ -565,34 +594,34 @@ public:
 };
 
 class Directory::Handle : public File::Handle {
-  boost::shared_ptr<Directory> getDir() { return file->cast<Directory>(); }
+  std::shared_ptr<Directory> getDir() { return file->cast<Directory>(); }
   void cacheChild(const std::string& name,
-                  boost::shared_ptr<File> child,
+                  std::shared_ptr<File> child,
                   DCacheKind kind);
 
 public:
-  Handle(boost::shared_ptr<File> directory) : File::Handle(directory) {}
-  Handle(boost::shared_ptr<File> directory, std::defer_lock_t)
+  Handle(std::shared_ptr<File> directory) : File::Handle(directory) {}
+  Handle(std::shared_ptr<File> directory, std::defer_lock_t)
     : File::Handle(directory, std::defer_lock) {}
 
   // Retrieve the child if it is in the dcache and otherwise forward the request
   // to the backend, caching any `File` object it returns.
-  boost::shared_ptr<File> getChild(const std::string& name);
+  std::shared_ptr<File> getChild(const std::string& name);
 
   // Add a child to this directory's entry cache without actually inserting it
   // in the underlying backend. Assumes a child with this name does not already
   // exist. Return `true` on success and `false` otherwise.
-  bool mountChild(const std::string& name, boost::shared_ptr<File> file);
+  bool mountChild(const std::string& name, std::shared_ptr<File> file);
 
   // Insert a child of the given name, kind, and mode in the underlying backend,
   // which will allocate and return a corresponding `File` on success or return
   // nullptr otherwise. Assumes a child with this name does not already exist.
   // If the operation failed, returns nullptr.
-  boost::shared_ptr<DataFile> insertDataFile(const std::string& name,
+  std::shared_ptr<DataFile> insertDataFile(const std::string& name,
                                            mode_t mode);
-  boost::shared_ptr<Directory> insertDirectory(const std::string& name,
+  std::shared_ptr<Directory> insertDirectory(const std::string& name,
                                              mode_t mode);
-  boost::shared_ptr<Symlink> insertSymlink(const std::string& name,
+  std::shared_ptr<Symlink> insertSymlink(const std::string& name,
                                          const std::string& target);
 
   // Move the file represented by `file` from its current directory to this
@@ -602,14 +631,14 @@ public:
   // without changing any underlying state. This should only be called from
   // renameat with the locks on the old and new parents already held.
   [[nodiscard]] int insertMove(const std::string& name,
-                               boost::shared_ptr<File> file);
+                               std::shared_ptr<File> file);
 
   // Remove the file with the given name. Returns zero on success or if the
   // child has already been removed and otherwise returns a negative error code
   // if the child cannot be removed.
   [[nodiscard]] int removeChild(const std::string& name);
 
-  std::string getName(boost::shared_ptr<File> file);
+  std::string getName(std::shared_ptr<File> file);
 
   [[nodiscard]] ssize_t getNumEntries();
   [[nodiscard]] MaybeEntries getEntries();
@@ -628,7 +657,10 @@ inline Directory::Handle Directory::locked() {
 }
 
 } // namespace wasmfs
+*/
 
+
+/*
 namespace wasmfs::path {
 
 // Typically -ENOTDIR or -ENOENT.
@@ -637,7 +669,7 @@ using Error = long;
 // The parent directory and the name of an entry within it. The returned string
 // view is either backed by the same memory as the view passed to `parseParent`
 // or is a view into a static string.
-using ParentChild = std::pair<boost::shared_ptr<Directory>, std::string_view>;
+using ParentChild = std::pair<std::shared_ptr<Directory>, std::string_view>;
 
 // If the path refers to a link, whether we should follow that link. Links among
 // the parent directories in the path are always followed.
@@ -670,11 +702,11 @@ ParsedParent parseParent(std::string_view path, __wasi_fd_t basefd = AT_FDCWD);
 
 struct ParsedFile {
 private:
-  std::variant<Error, boost::shared_ptr<File>> val;
+  std::variant<Error, std::shared_ptr<File>> val;
 
 public:
   ParsedFile(Error err) : val(err) {}
-  ParsedFile(boost::shared_ptr<File> file) : val(std::move(file)) {}
+  ParsedFile(std::shared_ptr<File> file) : val(std::move(file)) {}
   // Always ok to call. Returns 0 if there is no error.
   long getError() {
     if (auto* err = std::get_if<Error>(&val)) {
@@ -684,8 +716,8 @@ public:
     return 0;
   }
   // Call only after checking for an error.
-  boost::shared_ptr<File>& getFile() {
-    auto* ptr = std::get_if<boost::shared_ptr<File>>(&val);
+  std::shared_ptr<File>& getFile() {
+    auto* ptr = std::get_if<std::shared_ptr<File>>(&val);
     return *ptr;
   }
 };
@@ -700,11 +732,11 @@ ParsedFile parseFile(std::string_view path,
 ParsedFile getFileAt(__wasi_fd_t fd, std::string_view path, int flags);
 
 // Like `parseFile`, but parse the path relative to the given directory.
-ParsedFile getFileFrom(boost::shared_ptr<Directory> base, std::string_view path);
+ParsedFile getFileFrom(std::shared_ptr<Directory> base, std::string_view path);
 
 } // namespace wasmfs::path
 
-
+*/
 
 
 
@@ -713,28 +745,29 @@ ParsedFile getFileFrom(boost::shared_ptr<Directory> base, std::string_view path)
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
 // found in the LICENSE file.
 
-
+/*
 namespace wasmfs::SpecialFiles {
 
 // /dev/null
-boost::shared_ptr<DataFile> getNull();
+std::shared_ptr<DataFile> getNull();
 
 // /dev/stdin
-boost::shared_ptr<DataFile> getStdin();
+std::shared_ptr<DataFile> getStdin();
 
 // /dev/stdout
-boost::shared_ptr<DataFile> getStdout();
+std::shared_ptr<DataFile> getStdout();
 
 // /dev/stderr
-boost::shared_ptr<DataFile> getStderr();
+std::shared_ptr<DataFile> getStderr();
 
 // /dev/random
-boost::shared_ptr<DataFile> getRandom();
+std::shared_ptr<DataFile> getRandom();
 
 // /dev/urandom
-boost::shared_ptr<DataFile> getURandom();
+std::shared_ptr<DataFile> getURandom();
 
 } // namespace wasmfs::SpecialFiles
+*/
 
 
 
@@ -748,7 +781,7 @@ boost::shared_ptr<DataFile> getURandom();
 // system. Current Status: Work in Progress. See
 // https://github.com/emscripten-core/emscripten/issues/15041.
 
-
+/*
 
 namespace wasmfs {
 // A backend (or modular backend) provides a base for the new file system to
@@ -758,15 +791,16 @@ namespace wasmfs {
 class Backend {
 
 public:
-  virtual boost::shared_ptr<DataFile> createFile(mode_t mode) = 0;
-  virtual boost::shared_ptr<Directory> createDirectory(mode_t mode) = 0;
-  virtual boost::shared_ptr<Symlink> createSymlink(std::string target) = 0;
+  virtual std::shared_ptr<DataFile> createFile(mode_t mode) = 0;
+  virtual std::shared_ptr<Directory> createDirectory(mode_t mode) = 0;
+  virtual std::shared_ptr<Symlink> createSymlink(std::string target) = 0;
 
   virtual ~Backend() = default;
 };
 
 typedef backend_t (*backend_constructor_t)(void*);
 } // namespace wasmfs
+*/
 
 
 
@@ -781,7 +815,7 @@ typedef backend_t (*backend_constructor_t)(void*);
 // This should be the only backend file type defined in a header since it is the
 // default type. Current Status: Work in Progress. See
 // https://github.com/emscripten-core/emscripten/issues/15041.
-
+/*
 namespace wasmfs {
 
 // This class describes a file that lives in Wasm Memory.
@@ -804,12 +838,12 @@ public:
 
   class Handle : public DataFile::Handle {
 
-    boost::shared_ptr<MemoryDataFile> getFile() {
-      return boost::shared_ptr<MemoryDataFile>((MemoryDataFile*)file.get());
+    std::shared_ptr<MemoryDataFile> getFile() {
+      return std::shared_ptr<MemoryDataFile>((MemoryDataFile*)file.get());
     }
 
   public:
-    Handle(boost::shared_ptr<File> dataFile) : DataFile::Handle(dataFile) {}
+    Handle(std::shared_ptr<File> dataFile) : DataFile::Handle(dataFile) {}
   };
 
   Handle locked() { return Handle(shared_from_this()); }
@@ -819,7 +853,7 @@ class MemoryDirectory : public Directory {
   // Use a vector instead of a map to save code size.
   struct ChildEntry {
     std::string name;
-    boost::shared_ptr<File> child;
+    std::shared_ptr<File> child;
   };
 
   std::vector<ChildEntry> entries;
@@ -827,42 +861,42 @@ class MemoryDirectory : public Directory {
   std::vector<ChildEntry>::iterator findEntry(const std::string& name);
 
 protected:
-  void insertChild(const std::string& name, boost::shared_ptr<File> child) {
+  void insertChild(const std::string& name, std::shared_ptr<File> child) {
     assert(findEntry(name) == entries.end());
     entries.push_back({name, child});
   }
 
-  boost::shared_ptr<File> getChild(const std::string& name) override;
+  std::shared_ptr<File> getChild(const std::string& name) override;
 
   int removeChild(const std::string& name) override;
 
-  boost::shared_ptr<DataFile> insertDataFile(const std::string& name,
+  std::shared_ptr<DataFile> insertDataFile(const std::string& name,
                                            mode_t mode) override {
     auto child = getBackend()->createFile(mode);
     insertChild(name, child);
     return child;
   }
 
-  boost::shared_ptr<Directory> insertDirectory(const std::string& name,
+  std::shared_ptr<Directory> insertDirectory(const std::string& name,
                                              mode_t mode) override {
     auto child = getBackend()->createDirectory(mode);
     insertChild(name, child);
     return child;
   }
 
-  boost::shared_ptr<Symlink> insertSymlink(const std::string& name,
+  std::shared_ptr<Symlink> insertSymlink(const std::string& name,
                                          const std::string& target) override {
     auto child = getBackend()->createSymlink(target);
     insertChild(name, child);
     return child;
   }
 
-  int insertMove(const std::string& name, boost::shared_ptr<File> file) override;
+  int insertMove(const std::string& name, std::shared_ptr<File> file) override;
 
   ssize_t getNumEntries() override { return entries.size(); }
   Directory::MaybeEntries getEntries() override;
 
-  std::string getName(boost::shared_ptr<File> file) override;
+  std::string getName(std::shared_ptr<File> file) override;
 
   // Since we internally track files with `File` objects, we don't need the
   // dcache as well.
@@ -885,7 +919,7 @@ public:
 backend_t createMemoryBackend();
 
 } // namespace wasmfs
-
+*/
 
 // Copyright 2021 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
@@ -894,7 +928,7 @@ backend_t createMemoryBackend();
 
 
 
-
+/*
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -916,6 +950,7 @@ int _wasmfs_stdin_get_char(void);
 #ifdef __cplusplus
 }
 #endif
+*/
 
 
 
@@ -926,7 +961,7 @@ int _wasmfs_stdin_get_char(void);
 // This file defines the open file table of the new file system.
 // Current Status: Work in Progress.
 // See https://github.com/emscripten-core/emscripten/issues/15041.
-
+/*
 namespace wasmfs {
 static_assert(std::is_same<size_t, __wasi_size_t>::value,
               "size_t should be the same as __wasi_size_t");
@@ -943,8 +978,8 @@ template<typename T> bool addWillOverFlow(T a, T b) {
 
 class FileTable;
 
-class OpenFileState : public boost::enable_shared_from_this_no_throw<OpenFileState> {
-  boost::shared_ptr<File> file;
+class OpenFileState : public std::enable_shared_from_this<OpenFileState> {
+  std::shared_ptr<File> file;
   off_t position = 0;
   oflags_t flags; // RD_ONLY, WR_ONLY, RDWR
 
@@ -958,7 +993,7 @@ class OpenFileState : public boost::enable_shared_from_this_no_throw<OpenFileSta
   // objects.
   int uses = 0;
 
-  // We can't make the constructor private because boost::make_shared needs to be
+  // We can't make the constructor private because std::make_shared needs to be
   // able to call it, but we can make it unusable publicly.
   struct private_key {
     explicit private_key(int) {}
@@ -980,23 +1015,23 @@ public:
 
   OpenFileState(private_key,
                 oflags_t flags,
-                boost::shared_ptr<File> file,
+                std::shared_ptr<File> file,
                 std::vector<Directory::Entry>&& dirents)
     : file(file), flags(flags), dirents(std::move(dirents)) {}
 
-  [[nodiscard]] static int create(boost::shared_ptr<File> file,
+  [[nodiscard]] static int create(std::shared_ptr<File> file,
                                   oflags_t flags,
-                                  boost::shared_ptr<OpenFileState>& out);
+                                  std::shared_ptr<OpenFileState>& out);
 
   class Handle {
-    boost::shared_ptr<OpenFileState> openFileState;
+    std::shared_ptr<OpenFileState> openFileState;
     std::unique_lock<std::recursive_mutex> lock;
 
   public:
-    Handle(boost::shared_ptr<OpenFileState> openFileState)
+    Handle(std::shared_ptr<OpenFileState> openFileState)
       : openFileState(openFileState), lock(openFileState->mutex) {}
 
-    boost::shared_ptr<File>& getFile() { return openFileState->file; };
+    std::shared_ptr<File>& getFile() { return openFileState->file; };
 
     off_t getPosition() const { return openFileState->position; };
     void setPosition(off_t pos) { openFileState->position = pos; };
@@ -1012,7 +1047,7 @@ class FileTable {
   // Allow WasmFS to construct the FileTable singleton.
   friend class WasmFS;
 
-  std::vector<boost::shared_ptr<OpenFileState>> entries;
+  std::vector<std::shared_ptr<OpenFileState>> entries;
   std::recursive_mutex mutex;
 
   FileTable();
@@ -1027,39 +1062,39 @@ public:
     Handle(FileTable& fileTable)
       : fileTable(fileTable), lock(fileTable.mutex) {}
 
-    boost::shared_ptr<OpenFileState> getEntry(__wasi_fd_t fd);
+    std::shared_ptr<OpenFileState> getEntry(__wasi_fd_t fd);
 
     // Set the table slot at `fd` to the given file. If this overwrites the last
     // reference to an OpenFileState for a data file in the table, return the
     // file so it can be closed by the caller. Do not close the file directly in
     // this method so it can be closed later while the FileTable lock is not
     // held.
-    [[nodiscard]] boost::shared_ptr<DataFile>
-    setEntry(__wasi_fd_t fd, boost::shared_ptr<OpenFileState> openFile);
-    __wasi_fd_t addEntry(boost::shared_ptr<OpenFileState> openFileState);
+    [[nodiscard]] std::shared_ptr<DataFile>
+    setEntry(__wasi_fd_t fd, std::shared_ptr<OpenFileState> openFile);
+    __wasi_fd_t addEntry(std::shared_ptr<OpenFileState> openFileState);
   };
 
   Handle locked() { return Handle(*this); }
 };
 
 } // namespace wasmfs
+*/
 
-
-
+/*
 namespace wasmfs {
 
 class WasmFS {
 
-  std::vector<boost::shared_ptr<Backend>> backendTable;
+  std::vector<std::shared_ptr<Backend>> backendTable;
   FileTable fileTable;
-  boost::shared_ptr<Directory> rootDirectory;
-  boost::shared_ptr<Directory> cwd;
+  std::shared_ptr<Directory> rootDirectory;
+  std::shared_ptr<Directory> cwd;
   std::mutex mutex;
 
   // Private method to initialize root directory once.
   // Initializes default directories including dev/stdin, dev/stdout,
   // dev/stderr. Refers to the same std streams in the open file table.
-  boost::shared_ptr<Directory> initRootDirectory();
+  std::shared_ptr<Directory> initRootDirectory();
 
   // Initialize files specified by --preload-file option.
   void preloadFiles();
@@ -1070,19 +1105,19 @@ public:
 
   FileTable& getFileTable() { return fileTable; }
 
-  boost::shared_ptr<Directory> getRootDirectory() { return rootDirectory; };
+  std::shared_ptr<Directory> getRootDirectory() { return rootDirectory; };
 
-  boost::shared_ptr<Directory> getCWD() {
+  std::shared_ptr<Directory> getCWD() {
     const std::lock_guard<std::mutex> lock(mutex);
     return cwd;
   };
 
-  void setCWD(boost::shared_ptr<Directory> directory) {
+  void setCWD(std::shared_ptr<Directory> directory) {
     const std::lock_guard<std::mutex> lock(mutex);
     cwd = directory;
   };
 
-  backend_t addBackend(boost::shared_ptr<Backend> backend) {
+  backend_t addBackend(std::shared_ptr<Backend> backend) {
     const std::lock_guard<std::mutex> lock(mutex);
     backendTable.push_back(std::move(backend));
     return backendTable.back().get();
@@ -1093,7 +1128,10 @@ public:
 extern WasmFS wasmFS;
 
 } // namespace wasmfs
+*/
 
+/*
+#include <wasmfs.h>
 
 
 // File permission macros for wasmfs.
@@ -1350,7 +1388,7 @@ __wasi_errno_t fd_pread(__wasi_fd_t fd,
 
 EMSCRIPTEN_KEEPALIVE
 __wasi_errno_t fd_close(__wasi_fd_t fd) {
-  boost::shared_ptr<DataFile> closee;
+  std::shared_ptr<DataFile> closee;
   {
     // Do not hold the file table lock while performing the close.
     auto fileTable = wasmFS.getFileTable().locked();
@@ -1510,7 +1548,7 @@ static __wasi_fd_t doOpen(path::ParsedParent parsed,
     return -ENAMETOOLONG;
   }
 
-  boost::shared_ptr<File> child;
+  std::shared_ptr<File> child;
   {
     auto lockedParent = parent->locked();
     child = lockedParent.getChild(std::string(childName));
@@ -1537,7 +1575,7 @@ static __wasi_fd_t doOpen(path::ParsedParent parsed,
       }
 
       // TODO: Check write permissions on the parent directory.
-      boost::shared_ptr<File> created;
+      std::shared_ptr<File> created;
       if (backend == parent->getBackend()) {
         created = lockedParent.insertDataFile(std::string(childName), mode);
         if (!created) {
@@ -1561,7 +1599,7 @@ static __wasi_fd_t doOpen(path::ParsedParent parsed,
         return 0;
       }
 
-      boost::shared_ptr<OpenFileState> openFile;
+      std::shared_ptr<OpenFileState> openFile;
       if (auto err = OpenFileState::create(created, flags, openFile)) {
         assert(err < 0);
         return err;
@@ -1612,7 +1650,7 @@ static __wasi_fd_t doOpen(path::ParsedParent parsed,
 
   // Note that we open the file before truncating it because some backends may
   // truncate opened files more efficiently (e.g. OPFS).
-  boost::shared_ptr<OpenFileState> openFile;
+  std::shared_ptr<OpenFileState> openFile;
   if (auto err = OpenFileState::create(child, flags, openFile)) {
     assert(err < 0);
     return err;
@@ -1782,7 +1820,7 @@ __wasi_errno_t __wasi_fd_seek(__wasi_fd_t fd,
   return __WASI_ERRNO_SUCCESS;
 }
 
-static int doChdir(boost::shared_ptr<File>& file) {
+static int doChdir(std::shared_ptr<File>& file) {
   auto dir = file->dynCast<Directory>();
   if (!dir) {
     return -ENOTDIR;
@@ -1935,60 +1973,6 @@ int __syscall_unlinkat(int dirfd, intptr_t path, int flags) {
   // Input is valid, perform the unlink.
   return lockedParent.removeChild(childName);
 }
-
-#include <queue>
-
-namespace wasmfs {
-
-// The data shared between the two sides of a pipe.
-// TODO: Consider switching to a ring buffer for performance and code size if we
-//       don't need unbounded pipes.
-using PipeData = std::queue<uint8_t>;
-
-// A PipeFile is a simple file that has a reference to a PipeData that it
-// either reads from or writes to. A pair of PipeFiles comprise the two ends of
-// a pipe.
-class PipeFile : public DataFile {
-  boost::shared_ptr<PipeData> data;
-
-  int open(oflags_t) override { return 0; }
-  int close() override { return 0; }
-
-  ssize_t write(const uint8_t* buf, size_t len, off_t offset) override {
-    for (size_t i = 0; i < len; i++) {
-      data->push(buf[i]);
-    }
-    return len;
-  }
-
-  ssize_t read(uint8_t* buf, size_t len, off_t offset) override {
-    for (size_t i = 0; i < len; i++) {
-      if (data->empty()) {
-        return i;
-      }
-      buf[i] = data->front();
-      data->pop();
-    }
-    return len;
-  }
-
-  int flush() override { return 0; }
-
-  off_t getSize() override { return data->size(); }
-
-  // TODO: Should this return an error?
-  int setSize(off_t size) override { return 0; }
-
-public:
-  // PipeFiles do not have or need a backend. Pass NullBackend to the parent for
-  // that.
-  PipeFile(mode_t mode, boost::shared_ptr<PipeData> data)
-    : DataFile(mode, NullBackend), data(data) {
-    // Reads are always from the front; writes always to the end.
-    seekable = false;
-  }
-};
-} // namespace wasmfs
 
 
 
@@ -2387,7 +2371,7 @@ int __syscall_faccessat(int dirfd, intptr_t path, int amode, int flags) {
 }
 
 
-static int doTruncate(boost::shared_ptr<File>& file, off_t size) {
+static int doTruncate(std::shared_ptr<File>& file, off_t size) {
   auto dataFile = file->dynCast<DataFile>();
 
   if (!dataFile) {
@@ -2431,7 +2415,7 @@ int __syscall_ftruncate64(int fd, off_t size) {
   return ret;
 }
 
-static bool isTTY(boost::shared_ptr<File>& file) {
+static bool isTTY(std::shared_ptr<File>& file) {
   // TODO: Full TTY support. For now, just see stdin/out/err as terminals and
   //       nothing else.
   return file == SpecialFiles::getStdin() ||
@@ -2476,11 +2460,11 @@ int __syscall_pipe(intptr_t fd) {
   // that writing to one can be read in the other.
   //
   // No backend is needed here, so pass in nullptr for that.
-  auto data = boost::make_shared<PipeData>();
-  auto reader = boost::make_shared<PipeFile>(S_IRUGO, data);
-  auto writer = boost::make_shared<PipeFile>(S_IWUGO, data);
+  auto data = std::make_shared<PipeData>();
+  auto reader = std::make_shared<PipeFile>(S_IRUGO, data);
+  auto writer = std::make_shared<PipeFile>(S_IWUGO, data);
 
-  boost::shared_ptr<OpenFileState> openReader, openWriter;
+  std::shared_ptr<OpenFileState> openReader, openWriter;
   (void)OpenFileState::create(reader, O_RDONLY, openReader);
   (void)OpenFileState::create(writer, O_WRONLY, openWriter);
 
@@ -2671,7 +2655,7 @@ int __syscall_fcntl64(int fd, int cmd, ...) {
 
 
 static int
-doStatFS(boost::shared_ptr<File>& file, size_t size, struct statfs* buf) {
+doStatFS(std::shared_ptr<File>& file, size_t size, struct statfs* buf) {
   if (size != sizeof(struct statfs)) {
     // We only know how to write to a standard statfs, not even a truncated one.
     return -EINVAL;
@@ -2744,7 +2728,7 @@ int _mmap_js(size_t length,
     return -EBADF;
   }
 
-  boost::shared_ptr<DataFile> file;
+  std::shared_ptr<DataFile> file;
 
   // Keep the open file info locked only for as long as we need that.
   {
@@ -2919,8 +2903,13 @@ int __syscall__newselect(int nfds,
   return -ENOMEM;
 }
 }
+*/
 
 
+
+
+#include <file_table.cpp>
+/*
 namespace wasmfs {
 
 FileTable::FileTable() {
@@ -2937,7 +2926,7 @@ FileTable::FileTable() {
   
 }
 
-boost::shared_ptr<OpenFileState> FileTable::Handle::getEntry(__wasi_fd_t fd) {
+std::shared_ptr<OpenFileState> FileTable::Handle::getEntry(__wasi_fd_t fd) {
   
   if (fd >= fileTable.entries.size() || fd < 0) {
     return nullptr;
@@ -2946,9 +2935,9 @@ boost::shared_ptr<OpenFileState> FileTable::Handle::getEntry(__wasi_fd_t fd) {
   
 }
 
-boost::shared_ptr<DataFile>
+std::shared_ptr<DataFile>
 FileTable::Handle::setEntry(__wasi_fd_t fd,
-                            boost::shared_ptr<OpenFileState> openFile) {
+                            std::shared_ptr<OpenFileState> openFile) {
   assert(fd >= 0);
   if (fd >= fileTable.entries.size()) {
     fileTable.entries.resize(fd + 1);
@@ -2956,7 +2945,7 @@ FileTable::Handle::setEntry(__wasi_fd_t fd,
   if (openFile) {
     ++openFile->uses;
   }
-  boost::shared_ptr<DataFile> ret;
+  std::shared_ptr<DataFile> ret;
   if (fileTable.entries[fd] && --fileTable.entries[fd]->uses == 0) {
     ret = fileTable.entries[fd]->locked().getFile()->dynCast<DataFile>();
   }
@@ -2965,7 +2954,7 @@ FileTable::Handle::setEntry(__wasi_fd_t fd,
 }
 
 __wasi_fd_t
-FileTable::Handle::addEntry(boost::shared_ptr<OpenFileState> openFileState) {
+FileTable::Handle::addEntry(std::shared_ptr<OpenFileState> openFileState) {
   
   // TODO: add freelist to avoid linear lookup time.
   for (__wasi_fd_t i = 0;; i++) {
@@ -2978,9 +2967,9 @@ FileTable::Handle::addEntry(boost::shared_ptr<OpenFileState> openFileState) {
   
 }
 
-int OpenFileState::create(boost::shared_ptr<File> file,
+int OpenFileState::create(std::shared_ptr<File> file,
                           oflags_t flags,
-                          boost::shared_ptr<OpenFileState>& out) {
+                          std::shared_ptr<OpenFileState>& out) {
     
   assert(file);
   std::vector<Directory::Entry> dirents;
@@ -3000,13 +2989,14 @@ int OpenFileState::create(boost::shared_ptr<File> file,
     dirents.insert(dirents.end(), entries->begin(), entries->end());
   }
 
-  out = boost::shared_ptr<OpenFileState>(new OpenFileState(private_key{0}, flags, file, std::move(dirents)));
+  out = std::shared_ptr<OpenFileState>(new OpenFileState(private_key{0}, flags, file, std::move(dirents)));
   return 0;
   
 }
 } // extern "C"
+*/
 
-
+#include <wasmfs.cpp>
 // Copyright 2021 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
@@ -3014,7 +3004,7 @@ int OpenFileState::create(boost::shared_ptr<File> file,
 // This file defines the global state of the new file system.
 // Current Status: Work in Progress.
 // See https://github.com/emscripten-core/emscripten/issues/15041.
-
+/*
 
 
 namespace wasmfs {
@@ -3115,7 +3105,7 @@ WasmFS::~WasmFS() {
 
 
 
-boost::shared_ptr<Directory> WasmFS::initRootDirectory() {
+std::shared_ptr<Directory> WasmFS::initRootDirectory() {
 
   auto rootBackend = wasmfs_create_root_dir();
   auto rootDirectory =
@@ -3177,7 +3167,7 @@ void WasmFS::preloadFiles() {
     _wasmfs_get_preloaded_parent_path(i, parentPath);
  
     auto parsed = path::parseFile(parentPath);
-    boost::shared_ptr<Directory> parentDir;
+    std::shared_ptr<Directory> parentDir;
     if (parsed.getError() ||
         !(parentDir = parsed.getFile()->dynCast<Directory>())) {
       //emscripten_err(
@@ -3231,8 +3221,10 @@ void WasmFS::preloadFiles() {
 // This file defines the standard streams of the new file system.
 // Current Status: Work in Progress.
 // See https://github.com/emscripten-core/emscripten/issues/15041.
+*/
+#include <special_files.cpp>
 
-
+/*
 namespace wasmfs::SpecialFiles {
 
 namespace {
@@ -3389,39 +3381,39 @@ public:
 } // anonymous namespace
 
 
-boost::shared_ptr<DataFile> getNull() {
-  static boost::shared_ptr<NullFile> null;
+std::shared_ptr<DataFile> getNull() {
+  static std::shared_ptr<NullFile> null;
   return null;
 }
 
-boost::shared_ptr<DataFile> getStdin() {
-  static boost::shared_ptr<StdinFile> stdin;
+std::shared_ptr<DataFile> getStdin() {
+  static std::shared_ptr<StdinFile> stdin;
   return stdin;
 }
 
-boost::shared_ptr<DataFile> getStdout() {
-  static boost::shared_ptr<StdoutFile> stdout;
+std::shared_ptr<DataFile> getStdout() {
+  static std::shared_ptr<StdoutFile> stdout;
   return stdout;
 }
 
-boost::shared_ptr<DataFile> getStderr() {
-  static boost::shared_ptr<StderrFile> stderr;
+std::shared_ptr<DataFile> getStderr() {
+  static std::shared_ptr<StderrFile> stderr;
   return stderr;
 }
 
-boost::shared_ptr<DataFile> getRandom() {
-  static boost::shared_ptr<RandomFile> random;
+std::shared_ptr<DataFile> getRandom() {
+  static std::shared_ptr<RandomFile> random;
   return random;
 }
 
-boost::shared_ptr<DataFile> getURandom() {
-  static boost::shared_ptr<RandomFile> urandom;
+std::shared_ptr<DataFile> getURandom() {
+  static std::shared_ptr<RandomFile> urandom;
   return urandom;
 }
 
 
 } // namespace wasmfs::SpecialFiles
-
+*/
 // Copyright 2021 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
@@ -3431,6 +3423,8 @@ boost::shared_ptr<DataFile> getURandom() {
 // See https://github.com/emscripten-core/emscripten/issues/15041.
 
 
+#include <file.cpp>
+/*
 namespace wasmfs {
 
 //
@@ -3455,7 +3449,7 @@ void DataFile::Handle::preloadFromJS(int index) {
 //
 
 void Directory::Handle::cacheChild(const std::string& name,
-                                   boost::shared_ptr<File> child,
+                                   std::shared_ptr<File> child,
                                    DCacheKind kind) {
   // Update the dcache if the backend hasn't opted out of using the dcache or if
   // this is a mount point, in which case it is not under the control of the
@@ -3473,7 +3467,7 @@ void Directory::Handle::cacheChild(const std::string& name,
   child->locked().setParent(getDir());
 }
 
-boost::shared_ptr<File> Directory::Handle::getChild(const std::string& name) {
+std::shared_ptr<File> Directory::Handle::getChild(const std::string& name) {
   // Unlinked directories must be empty, without even "." or ".."
   if (!getParent()) {
     return nullptr;
@@ -3500,7 +3494,7 @@ boost::shared_ptr<File> Directory::Handle::getChild(const std::string& name) {
 }
 
 bool Directory::Handle::mountChild(const std::string& name,
-                                   boost::shared_ptr<File> child) {
+                                   std::shared_ptr<File> child) {
   assert(child);
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
@@ -3510,7 +3504,7 @@ bool Directory::Handle::mountChild(const std::string& name,
   return true;
 }
 
-boost::shared_ptr<DataFile>
+std::shared_ptr<DataFile>
 Directory::Handle::insertDataFile(const std::string& name, mode_t mode) {
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
@@ -3525,7 +3519,7 @@ Directory::Handle::insertDataFile(const std::string& name, mode_t mode) {
   return child;
 }
 
-boost::shared_ptr<Directory>
+std::shared_ptr<Directory>
 Directory::Handle::insertDirectory(const std::string& name, mode_t mode) {
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
@@ -3541,7 +3535,7 @@ Directory::Handle::insertDirectory(const std::string& name, mode_t mode) {
 }
 
 
-boost::shared_ptr<Symlink>
+std::shared_ptr<Symlink>
 Directory::Handle::insertSymlink(const std::string& name,
                                  const std::string& target) {
   // Cannot insert into an unlinked directory.
@@ -3561,7 +3555,7 @@ Directory::Handle::insertSymlink(const std::string& name,
 // the source and destination directories and/or taking `Directory::Handle`
 // arguments to prove that the directories have already been locked.
 int Directory::Handle::insertMove(const std::string& name,
-                                  boost::shared_ptr<File> file) {
+                                  std::shared_ptr<File> file) {
   // Cannot insert into an unlinked directory.
   if (!getParent()) {
     return -EPERM;
@@ -3629,7 +3623,7 @@ int Directory::Handle::removeChild(const std::string& name) {
   return 0;
 }
 
-std::string Directory::Handle::getName(boost::shared_ptr<File> file) {
+std::string Directory::Handle::getName(std::shared_ptr<File> file) {
   if (getDir()->maintainsFileIdentity()) {
     return getDir()->getName(file);
   }
@@ -3672,12 +3666,14 @@ Directory::MaybeEntries Directory::Handle::getEntries() {
   return entries;
 }
 } // namespace wasmfs
+*/
+#include <paths.cpp>
 
 // Copyright 2022 The Emscripten Authors.  All rights reserved.
 // Emscripten is available under two separate licenses, the MIT license and the
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
 // found in the LICENSE file.
-
+/*
 namespace wasmfs::path {
 
 namespace {
@@ -3685,7 +3681,7 @@ namespace {
 static inline constexpr size_t MAX_RECURSIONS = 40;
 
 ParsedFile doParseFile(std::string_view path,
-                       boost::shared_ptr<Directory> base,
+                       std::shared_ptr<Directory> base,
                        LinkBehavior links,
                        size_t& recursions);
 
@@ -3703,7 +3699,7 @@ ParsedFile getBaseDir(__wasi_fd_t basefd) {
   return -ENOTDIR;
 }
 
-ParsedFile getChild(boost::shared_ptr<Directory> dir,
+ParsedFile getChild(std::shared_ptr<Directory> dir,
                     std::string_view name,
                     LinkBehavior links,
                     size_t& recursions) {
@@ -3730,7 +3726,7 @@ ParsedFile getChild(boost::shared_ptr<Directory> dir,
   return child;
 }
 ParsedParent doParseParent(std::string_view path,
-                           boost::shared_ptr<Directory> curr,
+                           std::shared_ptr<Directory> curr,
                            size_t& recursions) {
   // Empty paths never exist.
   if (path.empty()) {
@@ -3783,7 +3779,7 @@ ParsedParent doParseParent(std::string_view path,
 }
 
 ParsedFile doParseFile(std::string_view path,
-                       boost::shared_ptr<Directory> base,
+                       std::shared_ptr<Directory> base,
                        LinkBehavior links,
                        size_t& recursions) {
   auto parsed = doParseParent(path, base, recursions);
@@ -3835,7 +3831,7 @@ ParsedFile getFileAt(__wasi_fd_t fd, std::string_view path, int flags) {
   
 }
 
-ParsedFile getFileFrom(boost::shared_ptr<Directory> base, std::string_view path) {
+ParsedFile getFileFrom(std::shared_ptr<Directory> base, std::string_view path) {
     
   size_t recursions = 0;
   return doParseFile(path, base, FollowLinks, recursions);
@@ -3852,8 +3848,10 @@ ParsedFile getFileFrom(boost::shared_ptr<Directory> base, std::string_view path)
 // This file defines the memory file backend of the new file system.
 // Current Status: Work in Progress.
 // See https://github.com/emscripten-core/emscripten/issues/15041.
+*/
+#include "backends/memory_backend.cpp"
 
-
+/*
 namespace wasmfs {
 
 ssize_t MemoryDataFile::write(const uint8_t* buf, size_t len, off_t offset) {
@@ -3886,7 +3884,7 @@ MemoryDirectory::findEntry(const std::string& name) {
   });
 }
 
-boost::shared_ptr<File> MemoryDirectory::getChild(const std::string& name) {
+std::shared_ptr<File> MemoryDirectory::getChild(const std::string& name) {
   if (auto entry = findEntry(name); entry != entries.end()) {
     return entry->child;
   }
@@ -3912,9 +3910,9 @@ Directory::MaybeEntries MemoryDirectory::getEntries() {
 }
 
 int MemoryDirectory::insertMove(const std::string& name,
-                                boost::shared_ptr<File> file) {
+                                std::shared_ptr<File> file) {
   auto& oldEntries =
-    boost::static_pointer_cast<MemoryDirectory>(file->locked().getParent())
+    std::static_pointer_cast<MemoryDirectory>(file->locked().getParent())
       ->entries;
   for (auto it = oldEntries.begin(); it != oldEntries.end(); ++it) {
     if (it->child == file) {
@@ -3927,7 +3925,7 @@ int MemoryDirectory::insertMove(const std::string& name,
   return 0;
 }
 
-std::string MemoryDirectory::getName(boost::shared_ptr<File> file) {
+std::string MemoryDirectory::getName(std::shared_ptr<File> file) {
   auto it =
     std::find_if(entries.begin(), entries.end(), [&](const auto& entry) {
       return entry.child == file;
@@ -3940,19 +3938,19 @@ std::string MemoryDirectory::getName(boost::shared_ptr<File> file) {
 
 class MemoryBackend : public Backend {
 public:
-  boost::shared_ptr<DataFile> createFile(mode_t mode) override {
-    return boost::shared_ptr<MemoryDataFile>(new MemoryDataFile(mode, this));
+  std::shared_ptr<DataFile> createFile(mode_t mode) override {
+    return std::shared_ptr<MemoryDataFile>(new MemoryDataFile(mode, this));
   }
-  boost::shared_ptr<Directory> createDirectory(mode_t mode) override {
-    return boost::shared_ptr<MemoryDirectory>(new MemoryDirectory(mode, this));
+  std::shared_ptr<Directory> createDirectory(mode_t mode) override {
+    return std::shared_ptr<MemoryDirectory>(new MemoryDirectory(mode, this));
   }
-  boost::shared_ptr<Symlink> createSymlink(std::string target) override {
-    return boost::shared_ptr<MemorySymlink>(new MemorySymlink(target, this));
+  std::shared_ptr<Symlink> createSymlink(std::string target) override {
+    return std::shared_ptr<MemorySymlink>(new MemorySymlink(target, this));
   }
 };
 
 backend_t createMemoryBackend() {
-    return wasmFS.addBackend(boost::make_shared<MemoryBackend>());
+    return wasmFS.addBackend(std::make_unique<MemoryBackend>());
 }
 
 extern "C" {
@@ -3968,7 +3966,9 @@ backend_t wasmfs_create_memory_backend() { return createMemoryBackend(); }
 // University of Illinois/NCSA Open Source License.  Both these licenses can be
 // found in the LICENSE file.
 
-
+#include <support.cpp>
+*/
+/*
 
 namespace wasmfs {
 
@@ -3998,3 +3998,4 @@ void handle_unreachable(const char* msg, const char* file, unsigned line) {
 }
 
 } // namespace wasmfs
+*/
